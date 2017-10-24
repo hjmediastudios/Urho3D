@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,7 @@
 #include "../Core/Context.h"
 #include "../Input/InputEvents.h"
 #include "../IO/Log.h"
+#include "../UI/LineEdit.h"
 #include "../UI/Menu.h"
 #include "../UI/UI.h"
 #include "../UI/UIEvents.h"
@@ -91,7 +92,7 @@ void Menu::OnHover(const IntVector2& position, const IntVector2& screenPosition,
 {
     Button::OnHover(position, screenPosition, buttons, qualifiers, cursor);
 
-    Menu* sibling = static_cast<Menu*>(parent_->GetChild(VAR_SHOW_POPUP, true));
+    Menu* sibling = parent_->GetChildStaticCast<Menu>(VAR_SHOW_POPUP, true);
     if (popup_ && !showPopup_)
     {
         // Check if popup is shown by one of the siblings
@@ -168,7 +169,7 @@ bool Menu::LoadXML(const XMLElement& source, XMLFile* styleFile, bool setInstanc
         if (typeName.Empty())
             typeName = "UIElement";
         unsigned index = childElem.HasAttribute("index") ? childElem.GetUInt("index") : M_MAX_UNSIGNED;
-        UIElement* child = 0;
+        UIElement* child = nullptr;
 
         if (!internalElem)
         {
@@ -333,7 +334,7 @@ void Menu::ShowPopup(bool enable)
 
 void Menu::SetAccelerator(int key, int qualifiers)
 {
-    acceleratorKey_ = key;
+    acceleratorKey_ = ToLower(key);
     acceleratorQualifiers_ = qualifiers;
 
     if (key)
@@ -430,8 +431,10 @@ void Menu::HandleKeyDown(StringHash eventType, VariantMap& eventData)
         (acceleratorQualifiers_ == QUAL_ANY || eventData[P_QUALIFIERS].GetInt() == acceleratorQualifiers_) &&
         eventData[P_REPEAT].GetBool() == false)
     {
-        // Ignore if UI has modal element
-        if (GetSubsystem<UI>()->HasModalElement())
+        // Ignore if UI has modal element or focused LineEdit
+        UI* ui = GetSubsystem<UI>();
+        UIElement* focusElement = ui->GetFocusElement();
+        if (ui->HasModalElement() || (focusElement && focusElement->GetType() == LineEdit::GetTypeStatic()))
             return;
 
         HandlePressedReleased(eventType, eventData);

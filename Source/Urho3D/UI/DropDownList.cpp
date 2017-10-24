@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -189,7 +189,7 @@ void DropDownList::SetSelection(unsigned index)
 
 void DropDownList::SetPlaceholderText(const String& text)
 {
-    static_cast<Text*>(placeholder_->GetChild(0))->SetText(text);
+    placeholder_->GetChildStaticCast<Text>(0)->SetText(text);
 }
 
 void DropDownList::SetResizePopup(bool enable)
@@ -224,7 +224,7 @@ UIElement* DropDownList::GetSelectedItem() const
 
 const String& DropDownList::GetPlaceholderText() const
 {
-    return static_cast<Text*>(placeholder_->GetChild(0))->GetText();
+    return placeholder_->GetChildStaticCast<Text>(0)->GetText();
 }
 
 void DropDownList::SetSelectionAttr(unsigned index)
@@ -289,28 +289,29 @@ bool DropDownList::FilterPopupImplicitAttributes(XMLElement& dest) const
         return false;
 
     // Horizontal scroll bar
-    childElem = childElem.GetChild("element");
-    if (childElem && !childElem.GetParent().RemoveChild(childElem))
-        return false;
-
+    XMLElement hScrollElem = childElem.GetChild("element");
     // Vertical scroll bar
-    childElem = childElem.GetNext("element");
-    if (childElem && !childElem.GetParent().RemoveChild(childElem))
-        return false;
-
+    XMLElement vScrollElem = hScrollElem.GetNext("element");
     // Scroll panel
-    childElem = childElem.GetNext("element");
-    if (!childElem)
+    XMLElement panelElem = vScrollElem.GetNext("element");
+
+    if (hScrollElem && !hScrollElem.GetParent().RemoveChild(hScrollElem))
         return false;
-    if (childElem.GetAttribute("style").Empty() && !childElem.SetAttribute("style", "none"))
+    if (vScrollElem && !vScrollElem.GetParent().RemoveChild(vScrollElem))
         return false;
 
-    // Item container
-    childElem = childElem.GetChild("element");
-    if (!childElem)
-        return false;
-    if (childElem.GetAttribute("style").Empty() && !childElem.SetAttribute("style", "none"))
-        return false;
+    if (panelElem)
+    {
+        if (panelElem.GetAttribute("style").Empty() && !panelElem.SetAttribute("style", "none"))
+            return false;
+        // Item container
+        XMLElement containerElem = panelElem.GetChild("element");
+        if (containerElem)
+        {
+            if (containerElem.GetAttribute("style").Empty() && !containerElem.SetAttribute("style", "none"))
+                return false;
+        }
+    }
 
     return true;
 }
@@ -324,7 +325,7 @@ void DropDownList::HandleItemClicked(StringHash eventType, VariantMap& eventData
 
     // Close and defocus the popup. This will actually send the selection forward
     if (listView_->HasFocus())
-        GetSubsystem<UI>()->SetFocusElement(focusMode_ < FM_FOCUSABLE ? 0 : this);
+        GetSubsystem<UI>()->SetFocusElement(focusMode_ < FM_FOCUSABLE ? nullptr : this);
     ShowPopup(false);
 }
 

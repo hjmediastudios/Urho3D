@@ -46,6 +46,9 @@ void Start()
     // Setup the viewport for displaying the scene
     SetupViewport();
 
+    // Set the mouse mode to use in the sample
+    SampleInitMouseMode(MM_RELATIVE);
+
     // Hook up to necessary events
     SubscribeToEvents();
 }
@@ -91,7 +94,7 @@ void CreateScene()
             RigidBody@ body = floorNode.CreateComponent("RigidBody");
             body.friction = 1.0f;
             CollisionShape@ shape = floorNode.CreateComponent("CollisionShape");
-            shape.SetBox(Vector3(1.0f, 1.0f, 1.0f));
+            shape.SetBox(Vector3::ONE);
         }
     }
 
@@ -240,8 +243,14 @@ Node@ CreateControllableObject()
 
 void MoveCamera()
 {
+    input.mouseVisible = input.mouseMode != MM_RELATIVE;
+    bool mouseDown = input.mouseButtonDown[MOUSEB_RIGHT];
+
+    // Override the MM_RELATIVE mouse grabbed settings, to allow interaction with UI
+    input.mouseGrabbed = mouseDown;
+
     // Right mouse button controls mouse cursor visibility: hide when pressed
-    ui.cursor.visible = !input.mouseButtonDown[MOUSEB_RIGHT];
+    ui.cursor.visible = !mouseDown;
 
     // Mouse sensitivity as degrees per pixel
     const float MOUSE_SENSITIVITY = 0.1f;
@@ -269,7 +278,7 @@ void MoveCamera()
             const float CAMERA_DISTANCE = 5.0f;
 
             // Move camera some distance away from the ball
-            cameraNode.position = ballNode.position + cameraNode.rotation * Vector3(0.0f, 0.0f, -1.0f) * CAMERA_DISTANCE;
+            cameraNode.position = ballNode.position + cameraNode.rotation * Vector3::BACK * CAMERA_DISTANCE;
             showInstructions = true;
         }
     }
@@ -301,10 +310,10 @@ void HandlePhysicsPreStep(StringHash eventType, VariantMap& eventData)
         // Only apply WASD controls if there is no focused UI element
         if (ui.focusElement is null)
         {
-            controls.Set(CTRL_FORWARD, input.keyDown['W']);
-            controls.Set(CTRL_BACK, input.keyDown['S']);
-            controls.Set(CTRL_LEFT, input.keyDown['A']);
-            controls.Set(CTRL_RIGHT, input.keyDown['D']);
+            controls.Set(CTRL_FORWARD, input.keyDown[KEY_W]);
+            controls.Set(CTRL_BACK, input.keyDown[KEY_S]);
+            controls.Set(CTRL_LEFT, input.keyDown[KEY_A]);
+            controls.Set(CTRL_RIGHT, input.keyDown[KEY_D]);
         }
 
         serverConnection.controls = controls;
@@ -332,13 +341,13 @@ void HandlePhysicsPreStep(StringHash eventType, VariantMap& eventData)
             // independent from rendering framerate. We could also apply forces (which would enable in-air control),
             // but want to emphasize that it's a ball which should only control its motion by rolling along the ground
             if (connection.controls.IsDown(CTRL_FORWARD))
-                body.ApplyTorque(rotation * Vector3(1.0f, 0.0f, 0.0f) * MOVE_TORQUE);
+                body.ApplyTorque(rotation * Vector3::RIGHT * MOVE_TORQUE);
             if (connection.controls.IsDown(CTRL_BACK))
-                body.ApplyTorque(rotation * Vector3(-1.0f, 0.0f, 0.0f) * MOVE_TORQUE);
+                body.ApplyTorque(rotation * Vector3::LEFT * MOVE_TORQUE);
             if (connection.controls.IsDown(CTRL_LEFT))
-                body.ApplyTorque(rotation * Vector3(0.0f, 0.0f, 1.0f) * MOVE_TORQUE);
+                body.ApplyTorque(rotation * Vector3::FORWARD * MOVE_TORQUE);
             if (connection.controls.IsDown(CTRL_RIGHT))
-                body.ApplyTorque(rotation * Vector3(0.0f, 0.0f, -1.0f) * MOVE_TORQUE);
+                body.ApplyTorque(rotation * Vector3::BACK * MOVE_TORQUE);
         }
     }
 }

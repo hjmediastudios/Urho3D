@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -67,7 +67,7 @@ public:
         if (drawables_.Remove(drawable))
         {
             if (resetOctant)
-                drawable->SetOctant(0);
+                drawable->SetOctant(nullptr);
             DecDrawableCount();
         }
     }
@@ -167,14 +167,14 @@ public:
     /// Construct.
     Octree(Context* context);
     /// Destruct.
-    ~Octree();
+    virtual ~Octree() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Handle attribute change.
-    virtual void OnSetAttribute(const AttributeInfo& attr, const Variant& src);
+    virtual void OnSetAttribute(const AttributeInfo& attr, const Variant& src) override;
     /// Visualize the component as debug geometry.
-    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest);
+    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest) override;
 
     /// Set size and maximum subdivision levels. If octree is not empty, drawable objects will be temporarily moved to the root.
     void SetSize(const BoundingBox& box, unsigned numLevels);
@@ -208,8 +208,8 @@ private:
 
     /// Drawable objects that require update.
     PODVector<Drawable*> drawableUpdates_;
-    /// Drawable objects that require reinsertion.
-    PODVector<Drawable*> drawableReinsertions_;
+    /// Drawable objects that were inserted during threaded update phase.
+    PODVector<Drawable*> threadedDrawableUpdates_;
     /// Mutex for octree reinsertions.
     Mutex octreeMutex_;
     /// Ray query temporary list of drawables.

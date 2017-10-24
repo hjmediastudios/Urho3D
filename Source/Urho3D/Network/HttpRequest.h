@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -47,15 +47,17 @@ public:
     /// Construct with parameters.
     HttpRequest(const String& url, const String& verb, const Vector<String>& headers, const String& postData);
     /// Destruct. Release the connection object.
-    ~HttpRequest();
+    virtual ~HttpRequest() override;
 
     /// Process the connection in the worker thread until closed.
-    virtual void ThreadFunction();
+    virtual void ThreadFunction() override;
 
     /// Read response data from the HTTP connection and return number of bytes actually read. While the connection is open, will block while trying to read the specified size. To avoid blocking, only read up to as many bytes as GetAvailableSize() returns.
-    virtual unsigned Read(void* dest, unsigned size);
+    virtual unsigned Read(void* dest, unsigned size) override;
     /// Set position from the beginning of the stream. Not supported.
-    virtual unsigned Seek(unsigned position);
+    virtual unsigned Seek(unsigned position) override;
+    /// Return whether all response data has been read.
+    virtual bool IsEof() const override;
 
     /// Return URL used in the request.
     const String& GetURL() const { return url_; }
@@ -74,8 +76,8 @@ public:
     bool IsOpen() const { return GetState() == HTTP_OPEN; }
 
 private:
-    /// Check for end of the data stream and return available size in buffer. Must only be called when the mutex is held by the main thread.
-    unsigned CheckEofAndAvailableSize();
+    /// Check for available read data in buffer and whether end has been reached. Must only be called when the mutex is held by the main thread.
+    Pair<unsigned, bool> CheckAvailableSizeAndEof() const;
 
     /// URL.
     String url_;

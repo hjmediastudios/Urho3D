@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -31,12 +31,17 @@
 
 #include <JO/jo_jpeg.h>
 #include <SDL/SDL_surface.h>
+#define STB_IMAGE_IMPLEMENTATION
 #include <STB/stb_image.h>
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <STB/stb_image_write.h>
+#ifdef URHO3D_WEBP
+#include <webp/decode.h>
+#include <webp/encode.h>
+#include <webp/mux.h>
+#endif
 
 #include "../DebugNew.h"
-
-extern "C" unsigned char* stbi_write_png_to_mem(unsigned char* pixels, int stride_bytes, int x, int y, int n, int* out_len);
 
 #ifndef MAKEFOURCC
 #define MAKEFOURCC(ch0, ch1, ch2, ch3) ((unsigned)(ch0) | ((unsigned)(ch1) << 8) | ((unsigned)(ch2) << 16) | ((unsigned)(ch3) << 24))
@@ -244,9 +249,11 @@ Image::Image(Context* context) :
     height_(0),
     depth_(0),
     components_(0),
+    numCompressedLevels_(0),
     cubemap_(false),
     array_(false),
-    sRGB_(false)
+    sRGB_(false),
+    compressedFormat_(CF_NONE)
 {
 }
 
@@ -269,7 +276,7 @@ bool Image::BeginLoad(Deserializer& source)
         // DDS compressed format
         DDSurfaceDesc2 ddsd;
         source.Read(&ddsd, sizeof(ddsd));
-        
+
         // DDS DX10+
         const bool hasDXGI = ddsd.ddpfPixelFormat_.dwFourCC_ == FOURCC_DX10;
         DDSHeader10 dxgiHeader;
@@ -277,7 +284,7 @@ bool Image::BeginLoad(Deserializer& source)
             source.Read(&dxgiHeader, sizeof(dxgiHeader));
 
         unsigned fourCC = ddsd.ddpfPixelFormat_.dwFourCC_;
-        
+
         // If the DXGI header is available then remap formats and check sRGB
         if (hasDXGI)
         {
@@ -366,27 +373,27 @@ bool Image::BeginLoad(Deserializer& source)
             unsigned blocksWide = (ddsd.dwWidth_ + 3) / 4;
             unsigned blocksHeight = (ddsd.dwHeight_ + 3) / 4;
             dataSize = blocksWide * blocksHeight * blockSize;
-            
+
             // Calculate mip data size
             unsigned x = ddsd.dwWidth_ / 2;
             unsigned y = ddsd.dwHeight_ / 2;
             unsigned z = ddsd.dwDepth_ / 2;
             for (unsigned level = ddsd.dwMipMapCount_; level > 1; x /= 2, y /= 2, z /= 2, --level)
             {
-                blocksWide = (Max(x, 1) + 3) / 4;
-                blocksHeight = (Max(y, 1) + 3) / 4;
-                dataSize += blockSize * blocksWide * blocksHeight * Max(z, 1);
+                blocksWide = (Max(x, 1U) + 3) / 4;
+                blocksHeight = (Max(y, 1U) + 3) / 4;
+                dataSize += blockSize * blocksWide * blocksHeight * Max(z, 1U);
             }
         }
         else
         {
-            dataSize = (ddsd.ddpfPixelFormat_.dwRGBBitCount_ / 8) * ddsd.dwWidth_ * ddsd.dwHeight_ * Max(ddsd.dwDepth_, 1);
+            dataSize = (ddsd.ddpfPixelFormat_.dwRGBBitCount_ / 8) * ddsd.dwWidth_ * ddsd.dwHeight_ * Max(ddsd.dwDepth_, 1U);
             // Calculate mip data size
             unsigned x = ddsd.dwWidth_ / 2;
             unsigned y = ddsd.dwHeight_ / 2;
             unsigned z = ddsd.dwDepth_ / 2;
             for (unsigned level = ddsd.dwMipMapCount_; level > 1; x /= 2, y /= 2, z /= 2, --level)
-                dataSize += (ddsd.ddpfPixelFormat_.dwRGBBitCount_ / 8) * Max(x, 1) * Max(y, 1) * Max(z, 1);
+                dataSize += (ddsd.ddpfPixelFormat_.dwRGBBitCount_ / 8) * Max(x, 1U) * Max(y, 1U) * Max(z, 1U);
         }
 
         // Do not use a shared ptr here, in case nothing is refcounting the image outside this function.
@@ -407,7 +414,7 @@ bool Image::BeginLoad(Deserializer& source)
             currentImage->numCompressedLevels_ = ddsd.dwMipMapCount_;
             if (!currentImage->numCompressedLevels_)
                 currentImage->numCompressedLevels_ = 1;
-            
+
             // Memory use needs to be exact per image as it's used for verifying the data size in GetCompressedLevel()
             // even though it would be more proper for the first image to report the size of all siblings combined
             currentImage->SetMemoryUse(dataSize);
@@ -422,7 +429,7 @@ bool Image::BeginLoad(Deserializer& source)
                 currentImage = nextImage;
             }
         }
-        
+
         // If uncompressed DDS, convert the data to 8bit RGBA as the texture classes can not currently use eg. RGB565 format
         if (compressedFormat_ == CF_RGBA)
         {
@@ -457,7 +464,7 @@ bool Image::BeginLoad(Deserializer& source)
                 ADJUSTSHIFT(gMask, gShiftL, gShiftR)
                 ADJUSTSHIFT(bMask, bShiftL, bShiftR)
                 ADJUSTSHIFT(aMask, aShiftL, aShiftR)
-                
+
                 SharedArrayPtr<unsigned char> rgbaData(new unsigned char[numPixels * 4]);
 
                 switch (sourcePixelByteSize)
@@ -731,6 +738,75 @@ bool Image::BeginLoad(Deserializer& source)
         source.Read(data_.Get(), dataSize);
         SetMemoryUse(dataSize);
     }
+#ifdef URHO3D_WEBP
+    else if (fileID == "RIFF")
+    {
+        // WebP: https://developers.google.com/speed/webp/docs/api
+
+        // RIFF layout is:
+        //   Offset  tag
+        //   0...3   "RIFF" 4-byte tag
+        //   4...7   size of image data (including metadata) starting at offset 8
+        //   8...11  "WEBP"   our form-type signature
+        const uint8_t TAG_SIZE(4);
+
+        source.Seek(8);
+        uint8_t fourCC[TAG_SIZE];
+        memset(&fourCC, 0, sizeof(uint8_t) * TAG_SIZE);
+
+        unsigned bytesRead(source.Read(&fourCC, TAG_SIZE));
+        if (bytesRead != TAG_SIZE)
+        {
+            // Truncated.
+            URHO3D_LOGERROR("Truncated RIFF data");
+            return false;
+        }
+        const uint8_t WEBP[TAG_SIZE] = {'W', 'E', 'B', 'P'};
+        if (memcmp(fourCC, WEBP, TAG_SIZE))
+        {
+            // VP8_STATUS_BITSTREAM_ERROR
+            URHO3D_LOGERROR("Invalid header");
+            return false;
+        }
+
+        // Read the file to buffer.
+        size_t dataSize(source.GetSize());
+        SharedArrayPtr<uint8_t> data(new uint8_t[dataSize]);
+
+        memset(data.Get(), 0, sizeof(uint8_t) * dataSize);
+        source.Seek(0);
+        source.Read(data.Get(), dataSize);
+
+        WebPBitstreamFeatures features;
+
+        if (WebPGetFeatures(data.Get(), dataSize, &features) != VP8_STATUS_OK)
+        {
+            URHO3D_LOGERROR("Error reading WebP image: " + source.GetName());
+            return false;
+        }
+
+        size_t imgSize(features.width * features.height * (features.has_alpha ? 4 : 3));
+        SharedArrayPtr<uint8_t> pixelData(new uint8_t[imgSize]);
+
+        bool decodeError(false);
+        if (features.has_alpha)
+        {
+            decodeError = WebPDecodeRGBAInto(data.Get(), dataSize, pixelData.Get(), imgSize, 4 * features.width) == nullptr;
+        }
+        else
+        {
+            decodeError = WebPDecodeRGBInto(data.Get(), dataSize, pixelData.Get(), imgSize, 3 * features.width) == nullptr;
+        }
+        if (decodeError)
+        {
+            URHO3D_LOGERROR("Error decoding WebP image:" + source.GetName());
+            return false;
+        }
+
+        SetSize(features.width, features.height, features.has_alpha ? 4 : 3);
+        SetData(pixelData);
+    }
+#endif
     else
     {
         // Not DDS, KTX or PVR, use STBImage to load other image formats as uncompressed
@@ -774,6 +850,23 @@ bool Image::Save(Serializer& dest) const
     return success;
 }
 
+bool Image::SaveFile(const String& fileName) const
+{
+    if (fileName.EndsWith(".dds", false))
+        return SaveDDS(fileName);
+    else if (fileName.EndsWith(".bmp", false))
+        return SaveBMP(fileName);
+    else if (fileName.EndsWith(".jpg", false) || fileName.EndsWith(".jpeg", false))
+        return SaveJPG(fileName, 100);
+    else if (fileName.EndsWith(".tga", false))
+        return SaveTGA(fileName);
+#ifdef URHO3D_WEBP
+    else if (fileName.EndsWith(".webp", false))
+        return SaveWEBP(fileName, 100.0f);
+#endif
+    else
+        return SavePNG(fileName);
+}
 
 bool Image::SetSize(int width, int height, unsigned components)
 {
@@ -1115,9 +1208,20 @@ void Image::ClearInt(unsigned uintColor)
         return;
     }
 
-    unsigned char* src = (unsigned char*)&uintColor;
-    for (unsigned i = 0; i < width_ * height_ * depth_ * components_; ++i)
-        data_[i] = src[i % components_];
+    if (components_ == 4)
+    {
+        unsigned color = uintColor;
+        unsigned* data = (unsigned*)GetData();
+        unsigned* data_end = (unsigned*)(GetData() + width_ * height_ * depth_ * components_);
+        for (; data < data_end; ++data)
+            *data = color;
+    }
+    else
+    {
+        unsigned char* src = (unsigned char*)&uintColor;
+        for (unsigned i = 0; i < width_ * height_ * depth_ * components_; ++i)
+            data_[i] = src[i % components_];
+    }
 }
 
 bool Image::SaveBMP(const String& fileName) const
@@ -1147,21 +1251,9 @@ bool Image::SavePNG(const String& fileName) const
 {
     URHO3D_PROFILE(SaveImagePNG);
 
-    FileSystem* fileSystem = GetSubsystem<FileSystem>();
-    if (fileSystem && !fileSystem->CheckAccess(GetPath(fileName)))
-    {
-        URHO3D_LOGERROR("Access denied to " + fileName);
-        return false;
-    }
-
-    if (IsCompressed())
-    {
-        URHO3D_LOGERROR("Can not save compressed image to PNG");
-        return false;
-    }
-
-    if (data_)
-        return stbi_write_png(GetNativePath(fileName).CString(), width_, height_, components_, data_.Get(), 0) != 0;
+    File outFile(context_, fileName, FILE_WRITE);
+    if (outFile.IsOpen())
+        return Image::Save(outFile); // Save uses PNG format
     else
         return false;
 }
@@ -1211,6 +1303,152 @@ bool Image::SaveJPG(const String& fileName, int quality) const
     else
         return false;
 }
+
+bool Image::SaveDDS(const String& fileName) const
+{
+    URHO3D_PROFILE(SaveImageDDS);
+
+    File outFile(context_, fileName, FILE_WRITE);
+    if (!outFile.IsOpen())
+    {
+        URHO3D_LOGERROR("Access denied to " + fileName);
+        return false;
+    }
+
+    if (IsCompressed())
+    {
+        URHO3D_LOGERROR("Can not save compressed image to DDS");
+        return false;
+    }
+
+    if (components_ != 4)
+    {
+        URHO3D_LOGERRORF("Can not save image with %u components to DDS", components_);
+        return false;
+    }
+
+    // Write image
+    PODVector<const Image*> levels;
+    GetLevels(levels);
+
+    outFile.WriteFileID("DDS ");
+
+    DDSurfaceDesc2 ddsd;
+    memset(&ddsd, 0, sizeof(ddsd));
+    ddsd.dwSize_ = sizeof(ddsd);
+    ddsd.dwFlags_ = 0x00000001l /*DDSD_CAPS*/
+        | 0x00000002l /*DDSD_HEIGHT*/ | 0x00000004l /*DDSD_WIDTH*/ | 0x00020000l /*DDSD_MIPMAPCOUNT*/ | 0x00001000l /*DDSD_PIXELFORMAT*/;
+    ddsd.dwWidth_ = width_;
+    ddsd.dwHeight_ = height_;
+    ddsd.dwMipMapCount_ = levels.Size();
+    ddsd.ddpfPixelFormat_.dwFlags_ = 0x00000040l /*DDPF_RGB*/ | 0x00000001l /*DDPF_ALPHAPIXELS*/;
+    ddsd.ddpfPixelFormat_.dwSize_ = sizeof(ddsd.ddpfPixelFormat_);
+    ddsd.ddpfPixelFormat_.dwRGBBitCount_ = 32;
+    ddsd.ddpfPixelFormat_.dwRBitMask_ = 0x000000ff;
+    ddsd.ddpfPixelFormat_.dwGBitMask_ = 0x0000ff00;
+    ddsd.ddpfPixelFormat_.dwBBitMask_ = 0x00ff0000;
+    ddsd.ddpfPixelFormat_.dwRGBAlphaBitMask_ = 0xff000000;
+
+    outFile.Write(&ddsd, sizeof(ddsd));
+    for (unsigned i = 0; i < levels.Size(); ++i)
+        outFile.Write(levels[i]->GetData(), levels[i]->GetWidth() * levels[i]->GetHeight() * 4);
+
+    return true;
+}
+
+bool Image::SaveWEBP(const String& fileName, float compression /* = 0.0f */) const
+{
+#ifdef URHO3D_WEBP
+    URHO3D_PROFILE(SaveImageWEBP);
+
+    FileSystem* fileSystem(GetSubsystem<FileSystem>());
+    File outFile(context_, fileName, FILE_WRITE);
+
+    if (fileSystem && !fileSystem->CheckAccess(GetPath(fileName)))
+    {
+        URHO3D_LOGERROR("Access denied to " + fileName);
+        return false;
+    }
+
+    if (IsCompressed())
+    {
+        URHO3D_LOGERROR("Can not save compressed image to WebP");
+        return false;
+    }
+
+    if (height_ > WEBP_MAX_DIMENSION || width_ > WEBP_MAX_DIMENSION)
+    {
+        URHO3D_LOGERROR("Maximum dimension supported by WebP is " + String(WEBP_MAX_DIMENSION));
+        return false;
+    }
+
+    if (components_ != 4 && components_ != 3)
+    {
+        URHO3D_LOGERRORF("Can not save image with %u components to WebP, which requires 3 or 4; Try ConvertToRGBA first?", components_);
+        return false;
+    }
+
+    if (!data_)
+    {
+        URHO3D_LOGERROR("No image data to save");
+        return false;
+    }
+
+    WebPPicture pic;
+    WebPConfig config;
+    WebPMemoryWriter wrt;
+    int importResult(0);
+    size_t encodeResult(0);
+
+    if (!WebPConfigPreset(&config, WEBP_PRESET_DEFAULT, compression) || !WebPPictureInit(&pic))
+    {
+        URHO3D_LOGERROR("WebP initialization failed; check installation");
+        return false;
+    }
+    config.lossless = 1;
+    config.exact = 1; // Preserve RGB values under transparency, as they may be wanted.
+
+    pic.use_argb = 1;
+    pic.width = width_;
+    pic.height = height_;
+    pic.writer = WebPMemoryWrite;
+    pic.custom_ptr = &wrt;
+    WebPMemoryWriterInit(&wrt);
+
+    if (components_ == 4)
+        importResult = WebPPictureImportRGBA(&pic, data_.Get(), components_ * width_);
+    else if (components_ == 3)
+        importResult = WebPPictureImportRGB(&pic, data_.Get(), components_ * width_);
+
+    if (!importResult)
+    {
+        URHO3D_LOGERROR("WebP import of image data failed (truncated RGBA/RGB data or memory error?)");
+        WebPPictureFree(&pic);
+        WebPMemoryWriterClear(&wrt);
+        return false;
+    }
+
+    encodeResult = WebPEncode(&config, &pic);
+    // Check only general failure. WebPEncode() sets pic.error_code with specific error.
+    if (!encodeResult)
+    {
+        URHO3D_LOGERRORF("WebP encoding failed (memory error?). WebPEncodingError = %d", pic.error_code);
+        WebPPictureFree(&pic);
+        WebPMemoryWriterClear(&wrt);
+        return false;
+    }
+
+    WebPPictureFree(&pic);
+    outFile.Write(wrt.mem, wrt.size);
+    WebPMemoryWriterClear(&wrt);
+
+    return true;
+#else
+    URHO3D_LOGERROR("Cannot save in WEBP format, support not compiled in");
+    return false;
+#endif
+}
+
 
 Color Image::GetPixel(int x, int y) const
 {
@@ -1293,8 +1531,8 @@ Color Image::GetPixelBilinear(float x, float y) const
 
     int xI = (int)x;
     int yI = (int)y;
-    float xF = x - floorf(x);
-    float yF = y - floorf(y);
+    float xF = Fract(x);
+    float yF = Fract(y);
 
     Color topColor = GetPixel(xI, yI).Lerp(GetPixel(xI + 1, yI), xF);
     Color bottomColor = GetPixel(xI, yI + 1).Lerp(GetPixel(xI + 1, yI + 1), xF);
@@ -1315,9 +1553,9 @@ Color Image::GetPixelTrilinear(float x, float y, float z) const
     int zI = (int)z;
     if (zI == depth_ - 1)
         return GetPixelBilinear(x, y);
-    float xF = x - floorf(x);
-    float yF = y - floorf(y);
-    float zF = z - floorf(z);
+    float xF = Fract(x);
+    float yF = Fract(y);
+    float zF = Fract(z);
 
     Color topColorNear = GetPixel(xI, yI, zI).Lerp(GetPixel(xI + 1, yI, zI), xF);
     Color bottomColorNear = GetPixel(xI, yI + 1, zI).Lerp(GetPixel(xI + 1, yI + 1, zI), xF);
@@ -1743,7 +1981,7 @@ CompressedLevel Image::GetCompressedLevel(unsigned index) const
             {
                 URHO3D_LOGERROR("Compressed level is outside image data. Offset: " + String(offset) + " Size: " + String(level.dataSize_) +
                          " Datasize: " + String(GetMemoryUse()));
-                level.data_ = 0;
+                level.data_ = nullptr;
                 return level;
             }
 
@@ -1781,7 +2019,7 @@ CompressedLevel Image::GetCompressedLevel(unsigned index) const
             {
                 URHO3D_LOGERROR("Compressed level is outside image data. Offset: " + String(offset) + " Size: " + String(level.dataSize_) +
                          " Datasize: " + String(GetMemoryUse()));
-                level.data_ = 0;
+                level.data_ = nullptr;
                 return level;
             }
 
@@ -1819,7 +2057,7 @@ CompressedLevel Image::GetCompressedLevel(unsigned index) const
             {
                 URHO3D_LOGERROR("Compressed level is outside image data. Offset: " + String(offset) + " Size: " + String(level.dataSize_) +
                          " Datasize: " + String(GetMemoryUse()));
-                level.data_ = 0;
+                level.data_ = nullptr;
                 return level;
             }
 
@@ -1837,18 +2075,18 @@ CompressedLevel Image::GetCompressedLevel(unsigned index) const
 Image* Image::GetSubimage(const IntRect& rect) const
 {
     if (!data_)
-        return 0;
+        return nullptr;
 
     if (depth_ > 1)
     {
         URHO3D_LOGERROR("Subimage not supported for 3D images");
-        return 0;
+        return nullptr;
     }
 
     if (rect.left_ < 0 || rect.top_ < 0 || rect.right_ > width_ || rect.bottom_ > height_ || !rect.Width() || !rect.Height())
     {
         URHO3D_LOGERROR("Can not get subimage from image " + GetName() + " with invalid region");
-        return 0;
+        return nullptr;
     }
 
     if (!IsCompressed())
@@ -1924,7 +2162,7 @@ Image* Image::GetSubimage(const IntRect& rect) const
         if (!subimageLevels)
         {
             URHO3D_LOGERROR("Subimage region from compressed image " + GetName() + " did not produce any data");
-            return 0;
+            return nullptr;
         }
 
         Image* image = new Image(context_);
@@ -1945,24 +2183,24 @@ Image* Image::GetSubimage(const IntRect& rect) const
 SDL_Surface* Image::GetSDLSurface(const IntRect& rect) const
 {
     if (!data_)
-        return 0;
+        return nullptr;
 
     if (depth_ > 1)
     {
         URHO3D_LOGERROR("Can not get SDL surface from 3D image");
-        return 0;
+        return nullptr;
     }
 
     if (IsCompressed())
     {
         URHO3D_LOGERROR("Can not get SDL surface from compressed image " + GetName());
-        return 0;
+        return nullptr;
     }
 
     if (components_ < 3)
     {
         URHO3D_LOGERROR("Can not get SDL surface from image " + GetName() + " with less than 3 components");
-        return 0;
+        return nullptr;
     }
 
     IntRect imageRect = rect;
@@ -2026,6 +2264,35 @@ void Image::PrecalculateLevels()
             current->nextLevel_ = current->GetNextLevel();
             current = current->nextLevel_;
         }
+    }
+}
+
+void Image::CleanupLevels()
+{
+    nextLevel_.Reset();
+}
+
+void Image::GetLevels(PODVector<Image*>& levels)
+{
+    levels.Clear();
+
+    Image* image = this;
+    while (image)
+    {
+        levels.Push(image);
+        image = image->nextLevel_;
+    }
+}
+
+void Image::GetLevels(PODVector<const Image*>& levels) const
+{
+    levels.Clear();
+
+    const Image* image = this;
+    while (image)
+    {
+        levels.Push(image);
+        image = image->nextLevel_;
     }
 }
 

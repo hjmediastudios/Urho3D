@@ -2,7 +2,8 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2015, assimp team
+Copyright (c) 2006-2017, assimp team
+
 All rights reserved.
 
 Redistribution and use of this software in source and binary forms,
@@ -38,7 +39,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ----------------------------------------------------------------------
 */
 
-// Modified by Lasse Oorni for Urho3D
 
 /** @file  MD5Parser.h
  *  @brief Definition of the .MD5 parser class.
@@ -47,7 +47,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef AI_MD5PARSER_H_INCLUDED
 #define AI_MD5PARSER_H_INCLUDED
 
-#include "../include/assimp/types.h"
+#include <assimp/types.h>
 #include "ParsingUtils.h"
 #include <vector>
 // Urho3D: VS2008 compatibility
@@ -268,6 +268,9 @@ inline void ConvertQuaternion (const aiVector3D& in, aiQuaternion& out) {
     if (t < 0.0f)
         out.w = 0.0f;
     else out.w = std::sqrt (t);
+
+    // Assimp convention.
+    out.w *= -1.f;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,7 +286,7 @@ public:
      *
      *  @param mSections List of file sections (output of MD5Parser)
      */
-    MD5MeshParser(SectionList& mSections);
+    explicit MD5MeshParser(SectionList& mSections);
 
     //! List of all meshes
     MeshList mMeshes;
@@ -308,7 +311,7 @@ public:
      *
      *  @param mSections List of file sections (output of MD5Parser)
      */
-    MD5AnimParser(SectionList& mSections);
+    explicit MD5AnimParser(SectionList& mSections);
 
 
     //! Output frame rate
@@ -340,7 +343,7 @@ public:
      *
      *  @param mSections List of file sections (output of MD5Parser)
      */
-    MD5CameraParser(SectionList& mSections);
+    explicit MD5CameraParser(SectionList& mSections);
 
 
     //! Output frame rate
@@ -373,14 +376,14 @@ public:
     // -------------------------------------------------------------------
     /** Report a specific error message and throw an exception
      *  @param error Error message to be reported
-     *  @param line Index of the line where the error occured
+     *  @param line Index of the line where the error occurred
      */
     AI_WONT_RETURN static void ReportError (const char* error, unsigned int line) AI_WONT_RETURN_SUFFIX;
 
     // -------------------------------------------------------------------
     /** Report a specific warning
      *  @param warn Warn message to be reported
-     *  @param line Index of the line where the error occured
+     *  @param line Index of the line where the error occurred
      */
     static void ReportWarning (const char* warn, unsigned int line);
 

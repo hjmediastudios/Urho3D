@@ -337,6 +337,24 @@
                 </element>
                 <element style="ListRow">
                     <attribute name="Layout Spacing" value="8" />
+                    <element type="CheckBox">
+                        <attribute name="Name" value="GammaCorrectionToggle" />
+                    </element>
+                    <element type="Text">
+                        <attribute name="Text" value="Gamma correction" />
+                    </element>
+                </element>
+                <element style="ListRow">
+                    <attribute name="Layout Spacing" value="8" />
+                    <element type="CheckBox">
+                        <attribute name="Name" value="HDRToggle" />
+                    </element>
+                    <element type="Text">
+                        <attribute name="Text" value="HDR rendering" />
+                    </element>
+                </element>
+                <element style="ListRow">
+                    <attribute name="Layout Spacing" value="8" />
                     <element type="Text">
                         <attribute name="Text" value="Texture quality" />
                     </element>
@@ -505,7 +523,6 @@
                         <attribute name="Text" value="Frame limiter" />
                     </element>
                 </element>
-                
                 <element style="ListRow">
                     <attribute name="Layout Spacing" value="20" />
                     <element type="Text">
@@ -517,7 +534,6 @@
                         <attribute name="Max Size" value="100 2147483647" />
                      </element>
                 </element>
-                
                 <element style="ListRow">
                     <attribute name="Layout Spacing" value="20" />
                     <element type="Text">
@@ -529,7 +545,6 @@
                         <attribute name="Max Size" value="100 2147483647" />
                      </element>
                 </element>
-                
                 <element style="ListRow">
                     <attribute name="Layout Spacing" value="20" />
                     <element type="Text">
@@ -539,6 +554,17 @@
                         <attribute name="Name" value="CubeMapGenSize" />
                         <attribute name="Min Size" value="100 0" />
                         <attribute name="Max Size" value="100 2147483647" />
+                     </element>
+                </element>
+                <element style="ListRow">
+                    <attribute name="Layout Spacing" value="8" />
+                    <element type="Text">
+                        <attribute name="Text" value="Tags " />
+                        <attribute name="Min Size" value="88 17" />
+                        <attribute name="Max Size" value="88 17" />
+                    </element>
+                    <element type="LineEdit">
+                        <attribute name="Name" value="DefaultTagsEdit" />
                      </element>
                 </element>
             </element>

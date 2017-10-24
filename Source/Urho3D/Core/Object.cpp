@@ -1,6 +1,5 @@
-
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +27,7 @@
 #include "../IO/Log.h"
 
 #include "../DebugNew.h"
+
 
 namespace Urho3D
 {
@@ -87,8 +87,8 @@ void Object::OnEvent(Object* sender, StringHash eventType, VariantMap& eventData
 {
     // Make a copy of the context pointer in case the object is destroyed during event handler invocation
     Context* context = context_;
-    EventHandler* specific = 0;
-    EventHandler* nonSpecific = 0;
+    EventHandler* specific = nullptr;
+    EventHandler* nonSpecific = nullptr;
 
     EventHandler* handler = eventHandlers_.First();
     while (handler)
@@ -111,7 +111,7 @@ void Object::OnEvent(Object* sender, StringHash eventType, VariantMap& eventData
     {
         context->SetEventHandler(specific);
         specific->Invoke(eventData);
-        context->SetEventHandler(0);
+        context->SetEventHandler(nullptr);
         return;
     }
 
@@ -119,18 +119,8 @@ void Object::OnEvent(Object* sender, StringHash eventType, VariantMap& eventData
     {
         context->SetEventHandler(nonSpecific);
         nonSpecific->Invoke(eventData);
-        context->SetEventHandler(0);
+        context->SetEventHandler(nullptr);
     }
-}
-
-bool Object::IsTypeOf(StringHash type)
-{
-    return GetTypeInfoStatic()->IsTypeOf(type);
-}
-
-bool Object::IsTypeOf(const TypeInfo* typeInfo)
-{
-    return GetTypeInfoStatic()->IsTypeOf(typeInfo);
 }
 
 bool Object::IsInstanceOf(StringHash type) const
@@ -148,16 +138,20 @@ void Object::SubscribeToEvent(StringHash eventType, EventHandler* handler)
     if (!handler)
         return;
 
-    handler->SetSenderAndEventType(0, eventType);
+    handler->SetSenderAndEventType(nullptr, eventType);
     // Remove old event handler first
     EventHandler* previous;
-    EventHandler* oldHandler = FindSpecificEventHandler(0, eventType, &previous);
+    EventHandler* oldHandler = FindSpecificEventHandler(nullptr, eventType, &previous);
     if (oldHandler)
+    {
         eventHandlers_.Erase(oldHandler, previous);
-
-    eventHandlers_.InsertFront(handler);
-
-    context_->AddEventReceiver(this, eventType);
+        eventHandlers_.InsertFront(handler);
+    }
+    else
+    {
+        eventHandlers_.InsertFront(handler);
+        context_->AddEventReceiver(this, eventType);
+    }
 }
 
 void Object::SubscribeToEvent(Object* sender, StringHash eventType, EventHandler* handler)
@@ -174,11 +168,25 @@ void Object::SubscribeToEvent(Object* sender, StringHash eventType, EventHandler
     EventHandler* previous;
     EventHandler* oldHandler = FindSpecificEventHandler(sender, eventType, &previous);
     if (oldHandler)
+    {
         eventHandlers_.Erase(oldHandler, previous);
+        eventHandlers_.InsertFront(handler);
+    }
+    else
+    {
+        eventHandlers_.InsertFront(handler);
+        context_->AddEventReceiver(this, sender, eventType);
+    }
+}
 
-    eventHandlers_.InsertFront(handler);
+void Object::SubscribeToEvent(StringHash eventType, const std::function<void(StringHash, VariantMap&)>& function, void* userData/*=0*/)
+{
+    SubscribeToEvent(eventType, new EventHandler11Impl(function, userData));
+}
 
-    context_->AddEventReceiver(this, sender, eventType);
+void Object::SubscribeToEvent(Object* sender, StringHash eventType, const std::function<void(StringHash, VariantMap&)>& function, void* userData/*=0*/)
+{
+    SubscribeToEvent(sender, eventType, new EventHandler11Impl(function, userData));
 }
 
 void Object::UnsubscribeFromEvent(StringHash eventType)
@@ -254,7 +262,7 @@ void Object::UnsubscribeFromAllEvents()
 void Object::UnsubscribeFromAllEventsExcept(const PODVector<StringHash>& exceptions, bool onlyUserData)
 {
     EventHandler* handler = eventHandlers_.First();
-    EventHandler* previous = 0;
+    EventHandler* previous = nullptr;
 
     while (handler)
     {
@@ -296,93 +304,86 @@ void Object::SendEvent(StringHash eventType, VariantMap& eventData)
     Context* context = context_;
     HashSet<Object*> processed;
 
-    context->BeginSendEvent(this);
+    context->BeginSendEvent(this, eventType);
 
     // Check first the specific event receivers
-    const HashSet<Object*>* group = context->GetEventReceivers(this, eventType);
+    // Note: group is held alive with a shared ptr, as it may get destroyed along with the sender
+    SharedPtr<EventReceiverGroup> group(context->GetEventReceivers(this, eventType));
     if (group)
     {
-        for (HashSet<Object*>::ConstIterator i = group->Begin(); i != group->End();)
-        {
-            HashSet<Object*>::ConstIterator current = i++;
-            Object* receiver = *current;
-            Object* next = 0;
-            if (i != group->End())
-                next = *i;
+        group->BeginSendEvent();
 
-            unsigned oldSize = group->Size();
+        const unsigned numReceivers = group->receivers_.Size();
+        for (unsigned i = 0; i < numReceivers; ++i)
+        {
+            Object* receiver = group->receivers_[i];
+            // Holes may exist if receivers removed during send
+            if (!receiver)
+                continue;
+
             receiver->OnEvent(this, eventType, eventData);
 
             // If self has been destroyed as a result of event handling, exit
             if (self.Expired())
             {
+                group->EndSendEvent();
                 context->EndSendEvent();
                 return;
             }
 
-            // If group has changed size during iteration (removed/added subscribers) try to recover
-            /// \todo This is not entirely foolproof, as a subscriber could have been added to make up for the removed one
-            if (group->Size() != oldSize)
-                i = group->Find(next);
-
             processed.Insert(receiver);
         }
+
+        group->EndSendEvent();
     }
 
     // Then the non-specific receivers
     group = context->GetEventReceivers(eventType);
     if (group)
     {
+        group->BeginSendEvent();
+
         if (processed.Empty())
         {
-            for (HashSet<Object*>::ConstIterator i = group->Begin(); i != group->End();)
+            const unsigned numReceivers = group->receivers_.Size();
+            for (unsigned i = 0; i < numReceivers; ++i)
             {
-                HashSet<Object*>::ConstIterator current = i++;
-                Object* receiver = *current;
-                Object* next = 0;
-                if (i != group->End())
-                    next = *i;
+                Object* receiver = group->receivers_[i];
+                if (!receiver)
+                    continue;
 
-                unsigned oldSize = group->Size();
                 receiver->OnEvent(this, eventType, eventData);
 
                 if (self.Expired())
                 {
+                    group->EndSendEvent();
                     context->EndSendEvent();
                     return;
                 }
-
-                if (group->Size() != oldSize)
-                    i = group->Find(next);
             }
         }
         else
         {
             // If there were specific receivers, check that the event is not sent doubly to them
-            for (HashSet<Object*>::ConstIterator i = group->Begin(); i != group->End();)
+            const unsigned numReceivers = group->receivers_.Size();
+            for (unsigned i = 0; i < numReceivers; ++i)
             {
-                HashSet<Object*>::ConstIterator current = i++;
-                Object* receiver = *current;
-                Object* next = 0;
-                if (i != group->End())
-                    next = *i;
+                Object* receiver = group->receivers_[i];
+                if (!receiver || processed.Contains(receiver))
+                    continue;
 
-                if (!processed.Contains(receiver))
+                receiver->OnEvent(this, eventType, eventData);
+
+                if (self.Expired())
                 {
-                    unsigned oldSize = group->Size();
-                    receiver->OnEvent(this, eventType, eventData);
-
-                    if (self.Expired())
-                    {
-                        context->EndSendEvent();
-                        return;
-                    }
-
-                    if (group->Size() != oldSize)
-                        i = group->Find(next);
+                    group->EndSendEvent();
+                    context->EndSendEvent();
+                    return;
                 }
             }
         }
+
+        group->EndSendEvent();
     }
 
     context->EndSendEvent();
@@ -391,6 +392,21 @@ void Object::SendEvent(StringHash eventType, VariantMap& eventData)
 VariantMap& Object::GetEventDataMap() const
 {
     return context_->GetEventDataMap();
+}
+
+const Variant& Object::GetGlobalVar(StringHash key) const
+{
+    return context_->GetGlobalVar(key);
+}
+
+const VariantMap& Object::GetGlobalVars() const
+{
+    return context_->GetGlobalVars();
+}
+
+void Object::SetGlobalVar(StringHash key, const Variant& value)
+{
+    context_->SetGlobalVar(key, value);
 }
 
 Object* Object::GetSubsystem(StringHash type) const
@@ -410,7 +426,7 @@ EventHandler* Object::GetEventHandler() const
 
 bool Object::HasSubscribedToEvent(StringHash eventType) const
 {
-    return FindEventHandler(eventType) != 0;
+    return FindEventHandler(eventType) != nullptr;
 }
 
 bool Object::HasSubscribedToEvent(Object* sender, StringHash eventType) const
@@ -418,7 +434,7 @@ bool Object::HasSubscribedToEvent(Object* sender, StringHash eventType) const
     if (!sender)
         return false;
     else
-        return FindSpecificEventHandler(sender, eventType) != 0;
+        return FindSpecificEventHandler(sender, eventType) != nullptr;
 }
 
 const String& Object::GetCategory() const
@@ -437,7 +453,7 @@ EventHandler* Object::FindEventHandler(StringHash eventType, EventHandler** prev
 {
     EventHandler* handler = eventHandlers_.First();
     if (previous)
-        *previous = 0;
+        *previous = nullptr;
 
     while (handler)
     {
@@ -448,14 +464,14 @@ EventHandler* Object::FindEventHandler(StringHash eventType, EventHandler** prev
         handler = eventHandlers_.Next(handler);
     }
 
-    return 0;
+    return nullptr;
 }
 
 EventHandler* Object::FindSpecificEventHandler(Object* sender, EventHandler** previous) const
 {
     EventHandler* handler = eventHandlers_.First();
     if (previous)
-        *previous = 0;
+        *previous = nullptr;
 
     while (handler)
     {
@@ -466,14 +482,14 @@ EventHandler* Object::FindSpecificEventHandler(Object* sender, EventHandler** pr
         handler = eventHandlers_.Next(handler);
     }
 
-    return 0;
+    return nullptr;
 }
 
 EventHandler* Object::FindSpecificEventHandler(Object* sender, StringHash eventType, EventHandler** previous) const
 {
     EventHandler* handler = eventHandlers_.First();
     if (previous)
-        *previous = 0;
+        *previous = nullptr;
 
     while (handler)
     {
@@ -484,13 +500,13 @@ EventHandler* Object::FindSpecificEventHandler(Object* sender, StringHash eventT
         handler = eventHandlers_.Next(handler);
     }
 
-    return 0;
+    return nullptr;
 }
 
 void Object::RemoveEventSender(Object* sender)
 {
     EventHandler* handler = eventHandlers_.First();
-    EventHandler* previous = 0;
+    EventHandler* previous = nullptr;
 
     while (handler)
     {
@@ -506,6 +522,26 @@ void Object::RemoveEventSender(Object* sender)
             handler = eventHandlers_.Next(handler);
         }
     }
+}
+
+
+Urho3D::StringHash EventNameRegistrar::RegisterEventName(const char* eventName)
+{
+    StringHash id(eventName);
+    GetEventNameMap()[id] = eventName;
+    return id;
+}
+
+const String& EventNameRegistrar::GetEventName(StringHash eventID)
+{
+    HashMap<StringHash, String>::ConstIterator it = GetEventNameMap().Find(eventID);
+    return  it != GetEventNameMap().End() ? it->second_ : String::EMPTY ;
+}
+
+HashMap<StringHash, String>& EventNameRegistrar::GetEventNameMap()
+{
+    static HashMap<StringHash, String> eventNames_;
+    return eventNames_;
 }
 
 }

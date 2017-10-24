@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -53,20 +53,20 @@ public:
     /// Construct.
     Constraint(Context* context);
     /// Destruct.
-    ~Constraint();
+    virtual ~Constraint() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Handle attribute write access.
-    virtual void OnSetAttribute(const AttributeInfo& attr, const Variant& src);
+    virtual void OnSetAttribute(const AttributeInfo& attr, const Variant& src) override;
     /// Apply attribute changes that can not be applied immediately. Called after scene load or a network update.
-    virtual void ApplyAttributes();
+    virtual void ApplyAttributes() override;
     /// Handle enabled/disabled state change.
-    virtual void OnSetEnabled();
+    virtual void OnSetEnabled() override;
     /// Return the depended on nodes to order network updates.
-    virtual void GetDependencyNodes(PODVector<Node*>& dest);
+    virtual void GetDependencyNodes(PODVector<Node*>& dest) override;
     /// Visualize the component as debug geometry.
-    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest);
+    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest) override;
 
     /// Set constraint type and recreate the constraint.
     void SetConstraintType(ConstraintType type);
@@ -101,7 +101,7 @@ public:
     PhysicsWorld* GetPhysicsWorld() const { return physicsWorld_; }
 
     /// Return Bullet constraint.
-    btTypedConstraint* GetConstraint() const { return constraint_; }
+    btTypedConstraint* GetConstraint() const { return constraint_.Get(); }
 
     /// Return constraint type.
     ConstraintType GetConstraintType() const { return constraintType_; }
@@ -149,11 +149,11 @@ public:
 
 protected:
     /// Handle node being assigned.
-    virtual void OnNodeSet(Node* node);
+    virtual void OnNodeSet(Node* node) override;
     /// Handle scene being assigned.
-    virtual void OnSceneSet(Scene* scene);
+    virtual void OnSceneSet(Scene* scene) override;
     /// Handle node transform being dirtied.
-    virtual void OnMarkedDirty(Node* node);
+    virtual void OnMarkedDirty(Node* node) override;
 
 private:
     /// Create the constraint.
@@ -168,7 +168,7 @@ private:
     /// Other rigid body.
     WeakPtr<RigidBody> otherBody_;
     /// Bullet constraint.
-    btTypedConstraint* constraint_;
+    UniquePtr<btTypedConstraint> constraint_;
     /// Constraint type.
     ConstraintType constraintType_;
     /// Constraint position.

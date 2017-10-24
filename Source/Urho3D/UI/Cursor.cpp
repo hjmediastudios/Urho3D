@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -29,6 +29,8 @@
 #include "../Resource/ResourceCache.h"
 #include "../UI/UI.h"
 
+#include <SDL/SDL_mouse.h>
+
 #include "../DebugNew.h"
 
 namespace Urho3D
@@ -51,7 +53,7 @@ static const char* shapeNames[] =
 };
 
 /// OS cursor shape lookup table matching cursor shape enumeration
-#if !defined(ANDROID) && !defined(IOS)
+#if !defined(__ANDROID__) && !defined(IOS) && !defined(TVOS)
 static const int osCursorLookup[CS_MAX_SHAPES] =
 {
     SDL_SYSTEM_CURSOR_ARROW,    // CS_NORMAL
@@ -92,7 +94,7 @@ Cursor::~Cursor()
         if (i->second_.osCursor_)
         {
             SDL_FreeCursor(i->second_.osCursor_);
-            i->second_.osCursor_ = 0;
+            i->second_.osCursor_ = nullptr;
         }
     }
 }
@@ -161,7 +163,7 @@ void Cursor::DefineShape(const String& shape, Image* image, const IntRect& image
     if (info.osCursor_)
     {
         SDL_FreeCursor(info.osCursor_);
-        info.osCursor_ = 0;
+        info.osCursor_ = nullptr;
     }
 
     // Reset current shape if it was edited
@@ -254,7 +256,7 @@ VariantVector Cursor::GetShapesAttr() const
 void Cursor::ApplyOSCursorShape()
 {
     // Mobile platforms do not support applying OS cursor shapes: comment out to avoid log error messages
-#if !defined(ANDROID) && !defined(IOS)
+#if !defined(__ANDROID__) && !defined(IOS) && !defined(TVOS)
     if (!osShapeDirty_ || !GetSubsystem<Input>()->IsMouseVisible() || GetSubsystem<UI>()->GetCursor() != this)
         return;
 
@@ -264,7 +266,7 @@ void Cursor::ApplyOSCursorShape()
     if (info.osCursor_ && info.systemDefined_ != useSystemShapes_)
     {
         SDL_FreeCursor(info.osCursor_);
-        info.osCursor_ = 0;
+        info.osCursor_ = nullptr;
     }
 
     // Create SDL cursor now if necessary

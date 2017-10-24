@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -47,16 +47,16 @@ public:
     /// Construct.
     ParticleEffect2D(Context* context);
     /// Destruct.
-    ~ParticleEffect2D();
+    virtual ~ParticleEffect2D() override;
     /// Register object factory. Drawable2D must be registered first.
     static void RegisterObject(Context* context);
 
     /// Load resource from stream. May be called from a worker thread. Return true if successful.
-    virtual bool BeginLoad(Deserializer& source);
+    virtual bool BeginLoad(Deserializer& source) override;
     /// Finish resource loading. Always called from the main thread. Return true if successful.
-    virtual bool EndLoad();
+    virtual bool EndLoad() override;
     /// Save resource. Return true if successful.
-    virtual bool Save(Serializer& dest) const;
+    virtual bool Save(Serializer& dest) const override;
 
     /// Set sprite.
     void SetSprite(Sprite2D* sprite);
@@ -128,6 +128,8 @@ public:
     void SetRotationEnd(float rotationEnd);
     /// Set rotation end variance.
     void SetRotationEndVariance(float rotationEndVariance);
+    /// Clone the 2D particle effect.
+    SharedPtr<ParticleEffect2D> Clone(const String& cloneName = String::EMPTY) const;
 
     /// Return sprite.
     Sprite2D* GetSprite() const { return sprite_; }
@@ -193,7 +195,7 @@ public:
     float GetFinishParticleSize() const { return finishParticleSize_; }
 
     /// Return finish particle size variance.
-    float GetFinishParticleSizeVariance() const { return FinishParticleSizeVariance_; }
+    float GetFinishParticleSizeVariance() const { return finishParticleSizeVariance_; }
 
     /// Return duration.
     float GetDuration() const { return duration_; }
@@ -295,7 +297,7 @@ private:
     /// Finish particle size.
     float finishParticleSize_;
     /// Finish particle size variance.
-    float FinishParticleSizeVariance_;
+    float finishParticleSizeVariance_;
     /// Duration.
     float duration_;
     /// Emitter type.

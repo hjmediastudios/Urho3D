@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -68,8 +68,8 @@ struct VertexBufferDesc
 {
     /// Vertex count.
     unsigned vertexCount_;
-    /// Element mask.
-    unsigned elementMask_;
+    /// Vertex declaration.
+    PODVector<VertexElement> vertexElements_;
     /// Vertex data size.
     unsigned dataSize_;
     /// Vertex data.
@@ -105,24 +105,24 @@ struct GeometryDesc
 };
 
 /// 3D model resource.
-class URHO3D_API Model : public Resource
+class URHO3D_API Model : public ResourceWithMetadata
 {
-    URHO3D_OBJECT(Model, Resource);
+    URHO3D_OBJECT(Model, ResourceWithMetadata);
 
 public:
     /// Construct.
     Model(Context* context);
     /// Destruct.
-    virtual ~Model();
+    virtual ~Model() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Load resource from stream. May be called from a worker thread. Return true if successful.
-    virtual bool BeginLoad(Deserializer& source);
+    virtual bool BeginLoad(Deserializer& source) override;
     /// Finish resource loading. Always called from the main thread. Return true if successful.
-    virtual bool EndLoad();
+    virtual bool EndLoad() override;
     /// Save resource. Return true if successful.
-    virtual bool Save(Serializer& dest) const;
+    virtual bool Save(Serializer& dest) const override;
 
     /// Set local-space bounding box.
     void SetBoundingBox(const BoundingBox& box);

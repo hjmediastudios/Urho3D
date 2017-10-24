@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -43,30 +43,30 @@ public:
     /// Construct.
     AnimatedModel(Context* context);
     /// Destruct.
-    virtual ~AnimatedModel();
+    virtual ~AnimatedModel() override;
     /// Register object factory. Drawable must be registered first.
     static void RegisterObject(Context* context);
 
     /// Load from binary data. Return true if successful.
-    virtual bool Load(Deserializer& source, bool setInstanceDefault = false);
+    virtual bool Load(Deserializer& source, bool setInstanceDefault = false) override;
     /// Load from XML data. Return true if successful.
-    virtual bool LoadXML(const XMLElement& source, bool setInstanceDefault = false);
+    virtual bool LoadXML(const XMLElement& source, bool setInstanceDefault = false) override;
     /// Load from JSON data. Return true if successful.
-    virtual bool LoadJSON(const JSONValue& source, bool setInstanceDefault = false);
+    virtual bool LoadJSON(const JSONValue& source, bool setInstanceDefault = false) override;
     /// Apply attribute changes that can not be applied immediately. Called after scene load or a network update.
-    virtual void ApplyAttributes();
+    virtual void ApplyAttributes() override;
     /// Process octree raycast. May be called from a worker thread.
-    virtual void ProcessRayQuery(const RayOctreeQuery& query, PODVector<RayQueryResult>& results);
+    virtual void ProcessRayQuery(const RayOctreeQuery& query, PODVector<RayQueryResult>& results) override;
     /// Update before octree reinsertion. Is called from a worker thread.
-    virtual void Update(const FrameInfo& frame);
+    virtual void Update(const FrameInfo& frame) override;
     /// Calculate distance and prepare batches for rendering. May be called from worker thread(s), possibly re-entrantly.
-    virtual void UpdateBatches(const FrameInfo& frame);
+    virtual void UpdateBatches(const FrameInfo& frame) override;
     /// Prepare geometry for rendering. Called from a worker thread if possible (no GPU update.)
-    virtual void UpdateGeometry(const FrameInfo& frame);
+    virtual void UpdateGeometry(const FrameInfo& frame) override;
     /// Return whether a geometry update is necessary, and if it can happen in a worker thread.
-    virtual UpdateGeometryType GetUpdateGeometryType();
+    virtual UpdateGeometryType GetUpdateGeometryType() override;
     /// Visualize the component as debug geometry.
-    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest);
+    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest) override;
 
     /// Set model.
     void SetModel(Model* model, bool createBones = true);
@@ -96,6 +96,8 @@ public:
     void SetMorphWeight(StringHash nameHash, float weight);
     /// Reset all vertex morphs to zero.
     void ResetMorphWeights();
+    /// Apply all animation states to nodes.
+    void ApplyAnimation();
 
     /// Return skeleton.
     Skeleton& GetSkeleton() { return skeleton_; }
@@ -163,17 +165,22 @@ public:
     /// Return per-geometry skin matrices. If empty, uses global skinning
     const Vector<PODVector<Matrix3x4> >& GetGeometrySkinMatrices() const { return geometrySkinMatrices_; }
 
+    /// Recalculate the bone bounding box. Normally called internally, but can also be manually called if up-to-date information before rendering is necessary.
+    void UpdateBoneBoundingBox();
+
 protected:
     /// Handle node being assigned.
-    virtual void OnNodeSet(Node* node);
+    virtual void OnNodeSet(Node* node) override;
     /// Handle node transform being dirtied.
-    virtual void OnMarkedDirty(Node* node);
+    virtual void OnMarkedDirty(Node* node) override;
     /// Recalculate the world-space bounding box.
-    virtual void OnWorldBoundingBoxUpdate();
+    virtual void OnWorldBoundingBoxUpdate() override;
 
 private:
     /// Assign skeleton and animation bone node references as a postprocess. Called by ApplyAttributes.
     void AssignBoneNodes();
+    /// Finalize master model bone bounding boxes by merging from matching non-master bones.. Performed whenever any of the AnimatedModels in the same node changes its model.
+    void FinalizeBoneBoundingBoxes();
     /// Remove (old) skeleton root bone.
     void RemoveRootBone();
     /// Mark animation and skinning to require an update.
@@ -192,8 +199,6 @@ private:
     void CopyMorphVertices(void* dest, void* src, unsigned vertexCount, VertexBuffer* clone, VertexBuffer* original);
     /// Recalculate animations. Called from Update().
     void UpdateAnimation(const FrameInfo& frame);
-    /// Recalculate the bone bounding box.
-    void UpdateBoneBoundingBox();
     /// Recalculate skinning.
     void UpdateSkinning();
     /// Reapply all vertex morphs.

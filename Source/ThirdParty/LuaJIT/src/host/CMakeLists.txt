@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2008-2013 the Urho3D project.
+# Copyright (c) 2008-2017 the Urho3D project.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,25 +20,24 @@
 # THE SOFTWARE.
 #
 
-if (CMAKE_PROJECT_NAME STREQUAL ExternalProject-tolua++)
-    # Do not install the buildvm host tool from tolua++ external project because it is built for targetting host system itself
-    # We only want to keep the buildvm host tool which is built for cross-compiling target (the one built from internal LuaJIT CMake-target)
-    set (DEST_RUNTIME_DIR "")   # In this particular case, it is not equivalent to unset() the variable
-elseif (NOT CMAKE_PROJECT_NAME STREQUAL Urho3D)
-    # Set CMake minimum version and CMake policy required by Urho3D-CMake-common module
-    cmake_minimum_required (VERSION 2.8.6)
+if (NOT CMAKE_PROJECT_NAME STREQUAL Urho3D)
+    # Set CMake minimum version and CMake policy required by UrhoCommon module
+    if (APPLE)
+        cmake_minimum_required (VERSION 3.4.1)
+    else ()
+        cmake_minimum_required (VERSION 3.2.3)
+    endif ()
     if (COMMAND cmake_policy)
+        # Libraries linked via full path no longer produce linker search paths
         cmake_policy (SET CMP0003 NEW)
-        if (CMAKE_VERSION VERSION_GREATER 2.8.12 OR CMAKE_VERSION VERSION_EQUAL 2.8.12)
-            # INTERFACE_LINK_LIBRARIES defines the link interface
-            cmake_policy (SET CMP0022 NEW)
-        endif ()
-        if (CMAKE_VERSION VERSION_GREATER 3.0.0 OR CMAKE_VERSION VERSION_EQUAL 3.0.0)
-            # Disallow use of the LOCATION target property - therefore we set to OLD as we still need it
-            cmake_policy (SET CMP0026 OLD)
-            # MACOSX_RPATH is enabled by default
-            cmake_policy (SET CMP0042 NEW)
-        endif ()
+        # INTERFACE_LINK_LIBRARIES defines the link interface
+        cmake_policy (SET CMP0022 NEW)
+        # Disallow use of the LOCATION target property - so we set to OLD as we still need it
+        cmake_policy (SET CMP0026 OLD)
+        # MACOSX_RPATH is enabled by default
+        cmake_policy (SET CMP0042 NEW)
+        # Honor the visibility properties for SHARED target types only
+        cmake_policy (SET CMP0063 OLD)
     endif ()
 
     # Set project name
@@ -47,8 +46,8 @@ elseif (NOT CMAKE_PROJECT_NAME STREQUAL Urho3D)
     # Set CMake modules search path
     set (CMAKE_MODULE_PATH ${BAKED_CMAKE_SOURCE_DIR}/CMake/Modules)
 
-    # Include Urho3D Cmake common module
-    include (Urho3D-CMake-common)
+    # Include UrhoCommon.cmake module after setting project name
+    include (UrhoCommon)
 
     # Unescape the variables
     foreach (ESCAPED_VAR HOST_XCFLAGS TARGET_ARCH DASM_FLAGS DASM_ARCH)
@@ -57,8 +56,19 @@ elseif (NOT CMAKE_PROJECT_NAME STREQUAL Urho3D)
     endforeach ()
 endif ()
 
+# When performing Xcode CI build suppress all the warnings for 3rd party libraries because there are just too many of them
+if (XCODE AND DEFINED ENV{CI})
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+endif ()
+
 # Add dependency target
-add_subdirectory (minilua)
+set (TARGET_NAME minilua)
+set (SOURCE_FILES minilua.c)
+if (NOT MSVC)
+    set (LIBS m)
+endif ()
+setup_executable (PRIVATE TOOL NODEPS)
+unset (LIBS)
 
 # Define target name
 set (TARGET_NAME buildvm)
@@ -73,7 +83,7 @@ set (DASM ${DASM_DIR}/dynasm.lua)
 set (DASM_DASC ${CMAKE_CURRENT_SOURCE_DIR}/../vm_${DASM_ARCH}.dasc)
 file (GLOB DASM_LUA ${DASM_DIR}/*.lua)
 add_custom_command (OUTPUT ${GEN_ARCH_H}
-    COMMAND ${CMAKE_BINARY_DIR}/bin/tool/minilua ${DASM} ${DASM_FLAGS} -o ${GEN_ARCH_H} ${DASM_DASC}
+    COMMAND minilua ${DASM} ${DASM_FLAGS} -o ${GEN_ARCH_H} ${DASM_DASC}
     DEPENDS minilua ${DASM_LUA} ${DASM_DASC}
     WORKING_DIRECTORY ${DASM_DIR}
     COMMENT "Generating buildvm arch header file")
@@ -85,8 +95,5 @@ set (SOURCE_FILES ${C_FILES} ${GEN_ARCH_H})
 # Define dependency libs
 set (INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR} ..)
 
-# All tools must be natively built and output to bin/tool subdir to differentiate them from target platfrom binaries in the bin directory
-set_tool_output_directories ()
-
 # Setup target
-setup_executable (NODEPS)
+setup_executable (${PRIVATE} TOOL NODEPS)

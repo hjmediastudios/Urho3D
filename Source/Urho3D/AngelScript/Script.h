@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -25,10 +25,10 @@
 #include "../Core/Mutex.h"
 #include "../Core/Object.h"
 
-class asIObjectType;
 class asIScriptContext;
 class asIScriptEngine;
 class asIScriptModule;
+class asITypeInfo;
 
 struct asSMessageInfo;
 
@@ -61,7 +61,7 @@ public:
     /// Construct.
     Script(Context* context);
     /// Destruct. Release the AngelScript engine.
-    ~Script();
+    virtual ~Script() override;
 
     /// Compile and execute a line of script in immediate mode.
     bool Execute(const String& line);
@@ -97,13 +97,11 @@ public:
     /// Clear the inbuild object type cache.
     void ClearObjectTypeCache();
     /// Query for an inbuilt object type by constant declaration. Can not be used for script types.
-    asIObjectType* GetObjectType(const char* declaration);
+    asITypeInfo* GetObjectType(const char* declaration);
 
     /// Return the script module create/delete mutex.
     Mutex& GetModuleMutex() { return moduleMutex_; }
 
-    /// Variant map for global variables that can persist through a script program reload.
-    static VariantMap globalVars;
 
 private:
     /// Increase script nesting level.
@@ -133,7 +131,7 @@ private:
     /// Script function/method execution contexts.
     Vector<asIScriptContext*> scriptFileContexts_;
     /// Search cache for inbuilt object types.
-    HashMap<const char*, asIObjectType*> objectTypes_;
+    HashMap<const char*, asITypeInfo*> objectTypes_;
     /// AngelScript resource router.
     SharedPtr<ResourceRouter> router_;
     /// Script module create/delete mutex.

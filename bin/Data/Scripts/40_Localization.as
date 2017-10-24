@@ -10,10 +10,11 @@ void Start()
 {
     // Execute the common startup for samples
     SampleStart();
-    
-    // Enable OS cursor
+
+    // Enable and center OS cursor
     input.mouseVisible = true;
-    
+    input.CenterMousePosition();
+
     // Load strings from JSON files and subscribe to the change language event
     InitLocalizationSystem();
 
@@ -22,12 +23,15 @@ void Start()
 
     // Init the user interface
     CreateGUI();
+
+    // Set the mouse mode to use in the sample
+    SampleInitMouseMode(MM_FREE);
 }
 
 void InitLocalizationSystem()
 {
     // JSON files must be in UTF8 encoding without BOM
-    // The first founded language will be set as current
+    // The first found language will be set as current
     localization.LoadJSONFile("StringsEnRu.json");
     // You can load multiple files
     localization.LoadJSONFile("StringsDe.json");
@@ -66,14 +70,14 @@ void CreateGUI()
     window.AddChild(b);
     b.SetStyle("Button");
     b.minHeight = 24;
-    
+
     Text@ t = b.CreateChild("Text", "ButtonTextChangeLang");
     // The showing text value will automatically change when language is changed
     t.autoLocalizable = true;
     // The text value used as a string identifier in this mode.
     // Remember that a letter case of the id and of the lang name is important.
     t.text = "Press this button";
-    
+
     t.SetAlignment(HA_CENTER, VA_CENTER);
     t.SetStyle("Text");
     SubscribeToEvent(b, "Released", "HandleChangeLangButtonPressed");
@@ -85,10 +89,10 @@ void CreateGUI()
     t = b.CreateChild("Text", "ButtonTextQuit");
     t.SetAlignment(HA_CENTER, VA_CENTER);
     t.SetStyle("Text");
-    
+
     // Manually set text in the current language
     t.text = localization.Get("quit");
-    
+
     SubscribeToEvent(b, "Released", "HandleQuitButtonPressed");
 }
 
@@ -96,7 +100,7 @@ void CreateScene()
 {
     scene_ = Scene();
     scene_.CreateComponent("Octree");
-    
+
     Zone@ zone = scene_.CreateComponent("Zone");
     zone.boundingBox = BoundingBox(-1000.0f, 1000.0f);
     zone.ambientColor = Color(0.5f, 0.5f, 0.5f);

@@ -2,7 +2,8 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2015, assimp team
+Copyright (c) 2006-2017, assimp team
+
 All rights reserved.
 
 Redistribution and use of this software in source and binary forms,
@@ -38,8 +39,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ----------------------------------------------------------------------
 */
 
-// Modified by Lasse Oorni for Urho3D
-
 /** @file Definition of platform independent string workers:
 
    ASSIMP_itoa10
@@ -52,7 +51,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef INCLUDED_AI_STRING_WORKERS_H
 #define INCLUDED_AI_STRING_WORKERS_H
 
-#include "../include/assimp/ai_assert.h"
+#include <assimp/ai_assert.h>
 #include "StringComparison.h"
 
 #include <string.h>
@@ -63,7 +62,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../include/assimp/Compiler/pstdint.h"
 #endif
 #include <string>
-#include <cctype>
 
 namespace Assimp    {
 

@@ -1,7 +1,7 @@
 // Urho3D editor settings dialog
-
 bool subscribedToEditorSettings = false;
 Window@ settingsDialog;
+String defaultTags;
 
 void CreateEditorSettingsDialog()
 {
@@ -111,12 +111,22 @@ void UpdateEditorSettingsDialog()
     CheckBox@ frameLimiterToggle = settingsDialog.GetChild("FrameLimiterToggle", true);
     frameLimiterToggle.checked = engine.maxFps > 0;
     
+    CheckBox@ gammaCorrectionToggle = settingsDialog.GetChild("GammaCorrectionToggle", true);
+    gammaCorrectionToggle.checked = gammaCorrection;
+
+    CheckBox@ HDRToggle = settingsDialog.GetChild("HDRToggle", true);
+    HDRToggle.checked = HDR;
+
     LineEdit@ cubemapPath = settingsDialog.GetChild("CubeMapGenPath", true);
     cubemapPath.text = cubeMapGen_Path;
     LineEdit@ cubemapName = settingsDialog.GetChild("CubeMapGenKey", true);
     cubemapName.text = cubeMapGen_Name;
     LineEdit@ cubemapSize = settingsDialog.GetChild("CubeMapGenSize", true);
     cubemapSize.text = String(cubeMapGen_Size);
+    
+    LineEdit@ defaultTagsEdit = settingsDialog.GetChild("DefaultTagsEdit", true);
+    defaultTagsEdit.text = defaultTags.Trimmed();
+    
 
     if (!subscribedToEditorSettings)
     {
@@ -161,6 +171,8 @@ void UpdateEditorSettingsDialog()
         SubscribeToEvent(specularLightingToggle, "Toggled", "EditSpecularLighting");
         SubscribeToEvent(dynamicInstancingToggle, "Toggled", "EditDynamicInstancing");
         SubscribeToEvent(frameLimiterToggle, "Toggled", "EditFrameLimiter");
+        SubscribeToEvent(gammaCorrectionToggle, "Toggled", "EditGammaCorrection");
+        SubscribeToEvent(HDRToggle, "Toggled", "EditHDR");
         SubscribeToEvent(settingsDialog.GetChild("CloseButton", true), "Released", "HideEditorSettingsDialog");
         
         SubscribeToEvent(cubemapPath, "TextChanged",  "EditCubemapPath");
@@ -170,6 +182,8 @@ void UpdateEditorSettingsDialog()
         SubscribeToEvent(cubemapSize, "TextChanged",  "EditCubemapSize");
         SubscribeToEvent(cubemapSize, "TextFinished", "EditCubemapSize");
         
+        SubscribeToEvent(defaultTagsEdit, "TextFinished", "EditDefaultTags");
+              
         subscribedToEditorSettings = true;
     }
 }
@@ -414,6 +428,18 @@ void EditFrameLimiter(StringHash eventType, VariantMap& eventData)
     engine.maxFps = edit.checked ? 200 : 0;
 }
 
+void EditGammaCorrection(StringHash eventType, VariantMap& eventData)
+{
+    CheckBox@ edit = eventData["Element"].GetPtr();
+    SetGammaCorrection(edit.checked);
+}
+
+void EditHDR(StringHash eventType, VariantMap& eventData)
+{
+    CheckBox@ edit = eventData["Element"].GetPtr();
+    SetHDR(edit.checked);
+}
+
 void EditCubemapPath(StringHash eventType, VariantMap& eventData)
 {
     LineEdit@ edit = eventData["Element"].GetPtr();
@@ -430,4 +456,10 @@ void EditCubemapSize(StringHash eventType, VariantMap& eventData)
 {
     LineEdit@ edit = eventData["Element"].GetPtr();
     cubeMapGen_Size = edit.text.ToInt();
+}
+
+void EditDefaultTags(StringHash eventType, VariantMap& eventData)
+{
+    LineEdit@ edit = eventData["Element"].GetPtr();
+    defaultTags = edit.text;
 }

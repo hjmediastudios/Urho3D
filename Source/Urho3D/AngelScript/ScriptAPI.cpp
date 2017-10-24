@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -61,7 +61,7 @@ static void ScriptFileDelayedExecute(float delay, bool repeat, const String& dec
 static asIScriptObject* NodeCreateScriptObjectWithFile(ScriptFile* file, const String& className, CreateMode mode, Node* ptr)
 {
     if (!file)
-        return 0;
+        return nullptr;
 
     // Try first to reuse an existing, empty ScriptInstance
     const Vector<SharedPtr<Component> >& components = ptr->GetComponents();
@@ -115,7 +115,7 @@ asIScriptObject* NodeGetScriptObject(Node* ptr)
         }
     }
 
-    return 0;
+    return nullptr;
 }
 
 asIScriptObject* NodeGetNamedScriptObject(const String& className, Node* ptr)
@@ -135,7 +135,7 @@ asIScriptObject* NodeGetNamedScriptObject(const String& className, Node* ptr)
         }
     }
 
-    return 0;
+    return nullptr;
 }
 
 static bool ScriptInstanceExecute(const String& declaration, CScriptArray* srcParams, ScriptInstance* ptr)
@@ -276,7 +276,6 @@ static void RegisterScript(asIScriptEngine* engine)
     engine->RegisterObjectMethod("Script", "void set_executeConsoleCommands(bool)", asMETHOD(Script, SetExecuteConsoleCommands), asCALL_THISCALL);
     engine->RegisterObjectMethod("Script", "bool get_executeConsoleCommands() const", asMETHOD(Script, GetExecuteConsoleCommands), asCALL_THISCALL);
     engine->RegisterGlobalFunction("Script@+ get_script()", asFUNCTION(GetScript), asCALL_CDECL);
-    engine->RegisterGlobalProperty("VariantMap globalVars", &Script::globalVars);
 }
 
 static void RegisterScriptObject(asIScriptEngine* engine)

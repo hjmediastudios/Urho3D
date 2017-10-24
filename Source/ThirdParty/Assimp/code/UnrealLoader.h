@@ -2,7 +2,8 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2015, assimp team
+Copyright (c) 2006-2017, assimp team
+
 All rights reserved.
 
 Redistribution and use of this software in source and binary forms,
@@ -37,8 +38,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------
 */
-
-// Modified by Lasse Oorni for Urho3D
 
 /** @file  UnrealLoader.h
  *  @brief Declaration of the .3d (UNREAL) importer class.
@@ -94,7 +93,7 @@ struct TempMat  {
         ,   numFaces    (0)
     {}
 
-    TempMat(const Triangle& in)
+    explicit TempMat(const Triangle& in)
         :   type        ((Unreal::MeshFlags)in.mType)
         ,   tex         (in.mTextureNum)
         ,   numFaces    (0)

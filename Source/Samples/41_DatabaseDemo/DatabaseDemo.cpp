@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -38,7 +38,7 @@ URHO3D_DEFINE_APPLICATION_MAIN(DatabaseDemo)
 
 DatabaseDemo::DatabaseDemo(Context* context) :
     Sample(context),
-    connection_(0),
+    connection_(nullptr),
     row_(0),
     maxRows_(50)
 {
@@ -49,7 +49,7 @@ DatabaseDemo::~DatabaseDemo()
     // Although the managed database connection will be disconnected by Database subsystem automatically in its destructor,
     // it is a good practice for a class to balance the number of connect() and disconnect() calls.
     GetSubsystem<Database>()->Disconnect(connection_);
-    connection_ = 0;
+    connection_ = nullptr;
 }
 
 void DatabaseDemo::Start()
@@ -79,6 +79,9 @@ void DatabaseDemo::Start()
     // Show OS mouse cursor
     GetSubsystem<Input>()->SetMouseVisible(true);
 
+    // Set the mouse mode to use in the sample
+    Sample::InitMouseMode(MM_FREE);
+
     // Open the operating system console window (for stdin / stdout) if not open yet
     OpenConsoleWindow();
 
@@ -93,7 +96,7 @@ void DatabaseDemo::Start()
     //   and it is designed for development of game server connecting to ODBC-compliant databases in mind
 
     // This demo will always work when using SQLite API as the SQLite database engine is embedded inside Urho3D game engine
-    //   and this is also the case when targeting HTML5 in Emscripten build
+    //   and this is also the case when targeting Web platform
 
     // We could have used #ifdef to init the connection string during compile time, but below shows how it is done during runtime
     // The "URHO3D_DATABASE_ODBC" compiler define is set when URHO3D_DATABASE_ODBC build option is enabled
@@ -136,7 +139,7 @@ void DatabaseDemo::HandleUpdate(StringHash eventType, VariantMap& eventData)
 void DatabaseDemo::HandleEscKeyDown(StringHash eventType, VariantMap& eventData)
 {
     // Unlike the other samples, exiting the engine when ESC is pressed instead of just closing the console
-    if (eventData[KeyDown::P_KEY].GetInt() == KEY_ESC)
+    if (eventData[KeyDown::P_KEY].GetInt() == KEY_ESCAPE)
         engine_->Exit();
 }
 
@@ -175,7 +178,7 @@ void DatabaseDemo::HandleInput(const String& input)
         if (input.StartsWith("set") && tokens.Size() > 1)
         {
             if (setting == "maxrows")
-                maxRows_ = (unsigned)Max(ToUInt(tokens[1]), 1);
+                maxRows_ = Max(ToUInt(tokens[1]), 1U);
             else if (setting == "connstr")
             {
                 String newConnectionString(input.Substring(input.Find(" ", input.Find("connstr")) + 1));

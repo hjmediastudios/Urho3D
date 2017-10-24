@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -38,7 +38,9 @@ enum Orientation2D
     /// Isometric.
     O_ISOMETRIC,
     /// Staggered.
-    O_STAGGERED
+    O_STAGGERED,
+    /// Hexagonal
+    O_HEXAGONAL
 };
 
 /// Tile map information.
@@ -64,7 +66,7 @@ struct URHO3D_API TileMapInfo2D
     /// Convert tile index to position.
     Vector2 TileIndexToPosition(int x, int y) const;
     /// Convert position to tile index, if out of map return false.
-    bool PositionToTileIndex(int& x, int& y, const Vector2& positon) const;
+    bool PositionToTileIndex(int& x, int& y, const Vector2& position) const;
 };
 
 /// Tile map layer type.
@@ -102,7 +104,7 @@ class URHO3D_API PropertySet2D : public RefCounted
 {
 public:
     PropertySet2D();
-    virtual ~PropertySet2D();
+    virtual ~PropertySet2D() override;
 
     /// Load from XML element.
     void Load(const XMLElement& element);

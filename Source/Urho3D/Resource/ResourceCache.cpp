@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -62,7 +62,7 @@ static const char* checkDirs[] =
     "Techniques",
     "Textures",
     "UI",
-    0
+    nullptr
 };
 
 static const SharedPtr<Resource> noResource;
@@ -500,7 +500,7 @@ SharedPtr<File> ResourceCache::GetFile(const String& nameIn, bool sendEventOnFai
 
     if (name.Length())
     {
-        File* file = 0;
+        File* file = nullptr;
 
         if (searchPackagesFirst_)
         {
@@ -546,12 +546,12 @@ Resource* ResourceCache::GetExistingResource(StringHash type, const String& name
     if (!Thread::IsMainThread())
     {
         URHO3D_LOGERROR("Attempted to get resource " + name + " from outside the main thread");
-        return 0;
+        return nullptr;
     }
 
     // If empty name, return null pointer immediately
     if (name.Empty())
-        return 0;
+        return nullptr;
 
     StringHash nameHash(name);
 
@@ -566,12 +566,12 @@ Resource* ResourceCache::GetResource(StringHash type, const String& nameIn, bool
     if (!Thread::IsMainThread())
     {
         URHO3D_LOGERROR("Attempted to get resource " + name + " from outside the main thread");
-        return 0;
+        return nullptr;
     }
 
     // If empty name, return null pointer immediately
     if (name.Empty())
-        return 0;
+        return nullptr;
 
     StringHash nameHash(name);
 
@@ -600,13 +600,13 @@ Resource* ResourceCache::GetResource(StringHash type, const String& nameIn, bool
             SendEvent(E_UNKNOWNRESOURCETYPE, eventData);
         }
 
-        return 0;
+        return nullptr;
     }
 
     // Attempt to load the resource
     SharedPtr<File> file = GetFile(name, sendEventOnFailure);
     if (!file)
-        return 0;   // Error is already logged
+        return nullptr;   // Error is already logged
 
     URHO3D_LOGDEBUG("Loading resource " + name);
     resource->SetName(name);
@@ -624,7 +624,7 @@ Resource* ResourceCache::GetResource(StringHash type, const String& nameIn, bool
         }
 
         if (!returnFailedResources_)
-            return 0;
+            return nullptr;
     }
 
     // Store to cache
@@ -784,8 +784,6 @@ unsigned long long ResourceCache::GetTotalMemoryUse() const
 
 String ResourceCache::GetResourceFileName(const String& name) const
 {
-    MutexLock lock(resourceMutex_);
-
     FileSystem* fileSystem = GetSubsystem<FileSystem>();
     for (unsigned i = 0; i < resourceDirs_.Size(); ++i)
     {
@@ -793,12 +791,15 @@ String ResourceCache::GetResourceFileName(const String& name) const
             return resourceDirs_[i] + name;
     }
 
-    return String();
+    if (IsAbsolutePath(name) && fileSystem->FileExists(name))
+        return name;
+    else
+        return String();
 }
 
 ResourceRouter* ResourceCache::GetResourceRouter(unsigned index) const
 {
-    return index < resourceRouters_.Size() ? resourceRouters_[index] : (ResourceRouter*)0;
+    return index < resourceRouters_.Size() ? resourceRouters_[index] : nullptr;
 }
 
 String ResourceCache::GetPreferredResourceDir(const String& path) const
@@ -810,7 +811,7 @@ String ResourceCache::GetPreferredResourceDir(const String& path) const
 
     FileSystem* fileSystem = GetSubsystem<FileSystem>();
 
-    for (unsigned i = 0; checkDirs[i] != 0; ++i)
+    for (unsigned i = 0; checkDirs[i] != nullptr; ++i)
     {
         if (fileSystem->DirExists(fixedPath + checkDirs[i]))
         {
@@ -821,7 +822,7 @@ String ResourceCache::GetPreferredResourceDir(const String& path) const
     if (!pathHasKnownDirs)
     {
         String parentPath = GetParentPath(fixedPath);
-        for (unsigned i = 0; checkDirs[i] != 0; ++i)
+        for (unsigned i = 0; checkDirs[i] != nullptr; ++i)
         {
             if (fileSystem->DirExists(parentPath + checkDirs[i]))
             {
@@ -849,7 +850,7 @@ String ResourceCache::SanitateResourceName(const String& nameIn) const
     if (resourceDirs_.Size())
     {
         String namePath = GetPath(name);
-        String exePath = fileSystem->GetProgramDir();
+        String exePath = fileSystem->GetProgramDir().Replaced("/./", "/");
         for (unsigned i = 0; i < resourceDirs_.Size(); ++i)
         {
             String relativeResourcePath = resourceDirs_[i];
@@ -1116,7 +1117,7 @@ File* ResourceCache::SearchResourceDirs(const String& nameIn)
     if (fileSystem->FileExists(nameIn))
         return new File(context_, nameIn);
 
-    return 0;
+    return nullptr;
 }
 
 File* ResourceCache::SearchPackages(const String& nameIn)
@@ -1127,7 +1128,7 @@ File* ResourceCache::SearchPackages(const String& nameIn)
             return new File(context_, packages_[i], nameIn);
     }
 
-    return 0;
+    return nullptr;
 }
 
 void RegisterResourceLibrary(Context* context)

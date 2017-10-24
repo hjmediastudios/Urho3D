@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -73,11 +73,14 @@ static void RegisterSprite2D(asIScriptEngine* engine)
     engine->RegisterObjectMethod("Sprite2D", "const Vector2& get_hotSpot() const", asMETHOD(Sprite2D, GetHotSpot), asCALL_THISCALL);
     engine->RegisterObjectMethod("Sprite2D", "void set_offset(const IntVector2&in)", asMETHOD(Sprite2D, SetOffset), asCALL_THISCALL);
     engine->RegisterObjectMethod("Sprite2D", "const IntVector2& get_offset() const", asMETHOD(Sprite2D, GetOffset), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Sprite2D", "void set_textureEdgeOffset(float)", asMETHOD(Sprite2D, SetTextureEdgeOffset), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Sprite2D", "float get_textureEdgeOffset() const", asMETHOD(Sprite2D, GetTextureEdgeOffset), asCALL_THISCALL);
 }
 
 static void RegisterSpriteSheet2D(asIScriptEngine* engine)
 {
     RegisterResource<SpriteSheet2D>(engine, "SpriteSheet2D");
+    engine->RegisterObjectMethod("SpriteSheet2D", "void set_texture(Texture2D@+)", asMETHOD(SpriteSheet2D, SetTexture), asCALL_THISCALL);
     engine->RegisterObjectMethod("SpriteSheet2D", "Texture2D@+ get_texture() const", asMETHOD(SpriteSheet2D, GetTexture), asCALL_THISCALL);
     engine->RegisterObjectMethod("SpriteSheet2D", "Sprite2D@+ GetSprite(const String&)", asMETHOD(SpriteSheet2D, GetSprite), asCALL_THISCALL);
     engine->RegisterObjectMethod("SpriteSheet2D", "void DefineSprite(const String&, const IntRect&, const Vector2& hotSpot=Vector2(0.5f, 0.5f), const IntVector2& offset = IntVector2::ZERO)", asMETHOD(SpriteSheet2D, DefineSprite), asCALL_THISCALL);
@@ -124,6 +127,14 @@ template <class T> void RegisterStaticSprite2D(asIScriptEngine* engine, const ch
     engine->RegisterObjectMethod(className, "const Vector2& get_hotSpot() const", asMETHOD(T, GetHotSpot), asCALL_THISCALL);
     engine->RegisterObjectMethod(className, "void set_customMaterial(Material@+)", asMETHOD(T, SetCustomMaterial), asCALL_THISCALL);
     engine->RegisterObjectMethod(className, "Material@+ get_customMaterial() const", asMETHOD(T, GetCustomMaterial), asCALL_THISCALL);
+    engine->RegisterObjectMethod(className, "void set_useDrawRect(bool)", asMETHOD(T, SetUseDrawRect), asCALL_THISCALL);
+    engine->RegisterObjectMethod(className, "bool get_useDrawRect() const", asMETHOD(T, GetUseDrawRect), asCALL_THISCALL);
+    engine->RegisterObjectMethod(className, "void set_useTextureRect(bool)", asMETHOD(T, SetUseTextureRect), asCALL_THISCALL);
+    engine->RegisterObjectMethod(className, "bool get_useTextureRect() const", asMETHOD(T, GetUseTextureRect), asCALL_THISCALL);
+    engine->RegisterObjectMethod(className, "void set_drawRect(const Rect&)", asMETHOD(T, SetDrawRect), asCALL_THISCALL);
+    engine->RegisterObjectMethod(className, "const Rect& get_drawRect() const", asMETHOD(T, GetDrawRect), asCALL_THISCALL);
+    engine->RegisterObjectMethod(className, "void set_textureRect(const Rect&)", asMETHOD(T, SetTextureRect), asCALL_THISCALL);
+    engine->RegisterObjectMethod(className, "const Rect& get_textureRect() const", asMETHOD(T, GetTextureRect), asCALL_THISCALL);
 }
 
 static void RegisterStaticSprite2D(asIScriptEngine* engine)
@@ -159,6 +170,15 @@ static void RegisterAnimatedSprite2D(asIScriptEngine* engine)
     engine->RegisterObjectMethod("AnimatedSprite2D", "float get_speed() const", asMETHOD(AnimatedSprite2D, GetSpeed), asCALL_THISCALL);
 }
 
+static ParticleEffect2D* ParticleEffect2DClone(const String& cloneName, ParticleEffect2D* ptr)
+{
+    SharedPtr<ParticleEffect2D> clone = ptr->Clone(cloneName);
+    // The shared pointer will go out of scope, so have to increment the reference count
+    // (here an auto handle can not be used)
+    clone->AddRef();
+    return clone.Get();
+}
+
 static void RegisterParticleEffect2D(asIScriptEngine* engine)
 {
     engine->RegisterEnum("EmitterType2D");
@@ -166,6 +186,7 @@ static void RegisterParticleEffect2D(asIScriptEngine* engine)
     engine->RegisterEnumValue("EmitterType2D", "EMITTER_TYPE_RADIAL", EMITTER_TYPE_RADIAL);
 
     RegisterResource<ParticleEffect2D>(engine, "ParticleEffect2D");
+    engine->RegisterObjectMethod("ParticleEffect2D", "ParticleEffect2D@ Clone(const String&in cloneName = String()) const", asFUNCTION(ParticleEffect2DClone), asCALL_CDECL_OBJLAST);
 }
 
 static void RegisterParticleEmitter2D(asIScriptEngine* engine)
@@ -177,6 +198,8 @@ static void RegisterParticleEmitter2D(asIScriptEngine* engine)
     engine->RegisterObjectMethod("ParticleEmitter2D", "Sprite2D@+ get_sprite() const", asMETHOD(ParticleEmitter2D, GetSprite), asCALL_THISCALL);
     engine->RegisterObjectMethod("ParticleEmitter2D", "void set_blendMode(BlendMode)", asMETHOD(ParticleEmitter2D, SetBlendMode), asCALL_THISCALL);
     engine->RegisterObjectMethod("ParticleEmitter2D", "BlendMode get_blendMode() const", asMETHOD(ParticleEmitter2D, GetBlendMode), asCALL_THISCALL);
+    engine->RegisterObjectMethod("ParticleEmitter2D", "void set_emitting(bool)", asMETHOD(ParticleEmitter2D, SetEmitting), asCALL_THISCALL);
+    engine->RegisterObjectMethod("ParticleEmitter2D", "bool get_emitting() const", asMETHOD(ParticleEmitter2D, IsEmitting), asCALL_THISCALL);
 }
 
 static void FakeAddRef(void* ptr)
@@ -193,6 +216,7 @@ static void RegisterTileMapDefs2D(asIScriptEngine* engine)
     engine->RegisterEnumValue("Orientation2D", "O_ORTHOGONAL", O_ORTHOGONAL);
     engine->RegisterEnumValue("Orientation2D", "O_ISOMETRIC", O_ISOMETRIC);
     engine->RegisterEnumValue("Orientation2D", "O_STAGGERED", O_STAGGERED);
+    engine->RegisterEnumValue("Orientation2D", "O_HEXAGONAL", O_HEXAGONAL);
 
     engine->RegisterObjectType("TileMapInfo2D", 0, asOBJ_REF);
     engine->RegisterObjectBehaviour("TileMapInfo2D", asBEHAVE_ADDREF, "void f()", asFUNCTION(FakeAddRef), asCALL_CDECL_OBJLAST);
@@ -275,6 +299,12 @@ static void RegisterTileMapLayer2D(asIScriptEngine* engine)
     engine->RegisterObjectMethod("TileMapLayer2D", "Node@+ get_imageNode() const", asMETHOD(TileMapLayer2D, GetImageNode), asCALL_THISCALL);
 }
 
+static CScriptArray* TileMap2DGetTileCollisionShapes(int gid, TileMap2D* tileMap)
+{
+    Vector<SharedPtr<TileMapObject2D> > result = tileMap->GetTileCollisionShapes(gid);
+    return VectorToArray<SharedPtr<TileMapObject2D> >(result, "Array<TileMapObject2D@>@");
+}
+
 static void RegisterTileMap2D(asIScriptEngine* engine)
 {
     engine->RegisterObjectMethod("TileMap2D", "void set_tmxFile(TmxFile2D@+)", asMETHOD(TileMap2D, SetTmxFile), asCALL_THISCALL);
@@ -284,6 +314,7 @@ static void RegisterTileMap2D(asIScriptEngine* engine)
     engine->RegisterObjectMethod("TileMap2D", "TileMapLayer2D@+ GetLayer(uint) const", asMETHOD(TileMap2D, GetLayer), asCALL_THISCALL);
     engine->RegisterObjectMethod("TileMap2D", "Vector2 TileIndexToPosition(int, int) const", asMETHOD(TileMap2D, TileIndexToPosition), asCALL_THISCALL);
     engine->RegisterObjectMethod("TileMap2D", "bool PositionToTileIndex(int&out x, int &out y, const Vector2&in) const", asMETHOD(TileMap2D, PositionToTileIndex), asCALL_THISCALL);
+    engine->RegisterObjectMethod("TileMap2D", "Array<TileMapObject2D@>@ GetTileCollisionShapes(int) const", asFUNCTION(TileMap2DGetTileCollisionShapes), asCALL_CDECL_OBJLAST);
 }
 
 static void RegisterRigidBody2D(asIScriptEngine* engine)
@@ -324,6 +355,7 @@ static void RegisterRigidBody2D(asIScriptEngine* engine)
     engine->RegisterObjectMethod("RigidBody2D", "void ApplyForceToCenter(const Vector2&in, bool)", asMETHOD(RigidBody2D, ApplyForceToCenter), asCALL_THISCALL);
     engine->RegisterObjectMethod("RigidBody2D", "void ApplyTorque(float torque, bool)", asMETHOD(RigidBody2D, ApplyTorque), asCALL_THISCALL);
     engine->RegisterObjectMethod("RigidBody2D", "void ApplyLinearImpulse(const Vector2&in, const Vector2&in, bool)", asMETHOD(RigidBody2D, ApplyLinearImpulse), asCALL_THISCALL);
+    engine->RegisterObjectMethod("RigidBody2D", "void ApplyLinearImpulseToCenter(const Vector2&in, bool)", asMETHOD(RigidBody2D, ApplyLinearImpulseToCenter), asCALL_THISCALL);
     engine->RegisterObjectMethod("RigidBody2D", "void ApplyAngularImpulse(float, bool)", asMETHOD(RigidBody2D, ApplyAngularImpulse), asCALL_THISCALL);
 }
 
@@ -374,7 +406,7 @@ static PhysicsWorld2D* SceneGetPhysicsWorld2D(Scene* ptr)
 static PhysicsWorld2D* GetPhysicsWorld2D()
 {
     Scene* scene = GetScriptContextScene();
-    return scene ? scene->GetComponent<PhysicsWorld2D>() : 0;
+    return scene ? scene->GetComponent<PhysicsWorld2D>() : nullptr;
 }
 
 static void RegisterPhysicsWorld2D(asIScriptEngine* engine)
@@ -422,7 +454,7 @@ static void RegisterPhysicsWorld2D(asIScriptEngine* engine)
     engine->RegisterObjectMethod("PhysicsWorld2D", "uint get_velocityIterations() const", asMETHOD(PhysicsWorld2D, GetVelocityIterations), asCALL_THISCALL);
     engine->RegisterObjectMethod("PhysicsWorld2D", "void set_positionIterations(uint)", asMETHOD(PhysicsWorld2D, SetPositionIterations), asCALL_THISCALL);
     engine->RegisterObjectMethod("PhysicsWorld2D", "uint get_positionIterations() const", asMETHOD(PhysicsWorld2D, GetPositionIterations), asCALL_THISCALL);
-    engine->RegisterObjectMethod("PhysicsWorld2D", "void DrawDebugGeometry() const", asMETHOD(PhysicsWorld2D, DrawDebugGeometry), asCALL_THISCALL);
+    engine->RegisterObjectMethod("PhysicsWorld2D", "void DrawDebugGeometry() const", asMETHODPR(PhysicsWorld2D, DrawDebugGeometry, (), void), asCALL_THISCALL);
 
     engine->RegisterObjectMethod("Scene", "PhysicsWorld2D@+ get_physicsWorld2D() const", asFUNCTION(SceneGetPhysicsWorld2D), asCALL_CDECL_OBJLAST);
     engine->RegisterGlobalFunction("PhysicsWorld2D@+ get_physicsWorld2D()", asFUNCTION(GetPhysicsWorld2D), asCALL_CDECL);
@@ -563,6 +595,8 @@ static void RegisterConstraintDistance2D(asIScriptEngine* engine)
     engine->RegisterObjectMethod("ConstraintDistance2D", "float get_frequencyHz() const", asMETHOD(ConstraintDistance2D, GetFrequencyHz), asCALL_THISCALL);
     engine->RegisterObjectMethod("ConstraintDistance2D", "void set_dampingRatio(float)", asMETHOD(ConstraintDistance2D, SetDampingRatio), asCALL_THISCALL);
     engine->RegisterObjectMethod("ConstraintDistance2D", "float get_dampingRatio() const", asMETHOD(ConstraintDistance2D, GetDampingRatio), asCALL_THISCALL);
+    engine->RegisterObjectMethod("ConstraintDistance2D", "void set_length(float)", asMETHOD(ConstraintDistance2D, SetLength), asCALL_THISCALL);
+    engine->RegisterObjectMethod("ConstraintDistance2D", "float get_length() const", asMETHOD(ConstraintDistance2D, GetLength), asCALL_THISCALL);
 }
 
 static void RegisterConstraintFriction2D(asIScriptEngine* engine)

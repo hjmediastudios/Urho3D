@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -73,7 +73,11 @@ void ConstraintWeld2D::SetFrequencyHz(float frequencyHz)
 
     jointDef_.frequencyHz = frequencyHz;
 
-    RecreateJoint();
+    if (joint_)
+        static_cast<b2WeldJoint*>(joint_)->SetFrequency(frequencyHz);
+    else
+        RecreateJoint();
+
     MarkNetworkUpdate();
 }
 
@@ -84,19 +88,23 @@ void ConstraintWeld2D::SetDampingRatio(float dampingRatio)
 
     jointDef_.dampingRatio = dampingRatio;
 
-    RecreateJoint();
+    if (joint_)
+        static_cast<b2WeldJoint*>(joint_)->SetDampingRatio(dampingRatio);
+    else
+        RecreateJoint();
+
     MarkNetworkUpdate();
 }
 
 b2JointDef* ConstraintWeld2D::GetJointDef()
 {
     if (!ownerBody_ || !otherBody_)
-        return 0;
+        return nullptr;
 
     b2Body* bodyA = ownerBody_->GetBody();
     b2Body* bodyB = otherBody_->GetBody();
     if (!bodyA || !bodyB)
-        return 0;
+        return nullptr;
 
     jointDef_.Initialize(bodyA, bodyB, ToB2Vec2(anchor_));
 

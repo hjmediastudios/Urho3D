@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -160,8 +160,8 @@ DecalSet::DecalSet(Context* context) :
     numIndices_(0),
     maxVertices_(DEFAULT_MAX_VERTICES),
     maxIndices_(DEFAULT_MAX_INDICES),
+    optimizeBufferSize_(false),
     skinned_(false),
-    bufferSizeDirty_(true),
     bufferDirty_(true),
     boundingBoxDirty_(true),
     skinningDirty_(false),
@@ -188,6 +188,7 @@ void DecalSet::RegisterObject(Context* context)
         AM_DEFAULT);
     URHO3D_ACCESSOR_ATTRIBUTE("Max Vertices", GetMaxVertices, SetMaxVertices, unsigned, DEFAULT_MAX_VERTICES, AM_DEFAULT);
     URHO3D_ACCESSOR_ATTRIBUTE("Max Indices", GetMaxIndices, SetMaxIndices, unsigned, DEFAULT_MAX_INDICES, AM_DEFAULT);
+    URHO3D_ACCESSOR_ATTRIBUTE("Optimize Buffer Size", GetOptimizeBufferSize, SetOptimizeBufferSize, bool, false, AM_DEFAULT);
     URHO3D_ACCESSOR_ATTRIBUTE("Can Be Occluded", IsOccludee, SetOccludee, bool, true, AM_DEFAULT);
     URHO3D_ACCESSOR_ATTRIBUTE("Draw Distance", GetDrawDistance, SetDrawDistance, float, 0.0f, AM_DEFAULT);
     URHO3D_COPY_BASE_ATTRIBUTES(Drawable);
@@ -229,9 +230,6 @@ void DecalSet::UpdateBatches(const FrameInfo& frame)
 
 void DecalSet::UpdateGeometry(const FrameInfo& frame)
 {
-    if (bufferSizeDirty_)
-        UpdateBufferSize();
-
     if (bufferDirty_ || vertexBuffer_->IsDataLost() || indexBuffer_->IsDataLost())
         UpdateBuffers();
 
@@ -241,7 +239,7 @@ void DecalSet::UpdateGeometry(const FrameInfo& frame)
 
 UpdateGeometryType DecalSet::GetUpdateGeometryType()
 {
-    if (bufferDirty_ || bufferSizeDirty_ || vertexBuffer_->IsDataLost() || indexBuffer_->IsDataLost())
+    if (bufferDirty_ || vertexBuffer_->IsDataLost() || indexBuffer_->IsDataLost())
         return UPDATE_MAIN_THREAD;
     else if (skinningDirty_)
         return UPDATE_WORKER_THREAD;
@@ -258,11 +256,12 @@ void DecalSet::SetMaterial(Material* material)
 void DecalSet::SetMaxVertices(unsigned num)
 {
     // Never expand to 32 bit indices
-    num = (unsigned)Clamp((int)num, MIN_VERTICES, MAX_VERTICES);
+    num = (unsigned)Clamp(num, MIN_VERTICES, MAX_VERTICES);
 
     if (num != maxVertices_)
     {
-        bufferSizeDirty_ = true;
+        if (!optimizeBufferSize_)
+            bufferDirty_ = true;
         maxVertices_ = num;
 
         while (decals_.Size() && numVertices_ > maxVertices_)
@@ -279,11 +278,23 @@ void DecalSet::SetMaxIndices(unsigned num)
 
     if (num != maxIndices_)
     {
-        bufferSizeDirty_ = true;
+        if (!optimizeBufferSize_)
+            bufferDirty_ = true;
         maxIndices_ = num;
 
         while (decals_.Size() && numIndices_ > maxIndices_)
             RemoveDecals(1);
+
+        MarkNetworkUpdate();
+    }
+}
+
+void DecalSet::SetOptimizeBufferSize(bool enable)
+{
+    if (enable != optimizeBufferSize_)
+    {
+        optimizeBufferSize_ = enable;
+        bufferDirty_ = true;
 
         MarkNetworkUpdate();
     }
@@ -310,8 +321,8 @@ bool DecalSet::AddDecal(Drawable* target, const Vector3& worldPosition, const Qu
     if ((animatedModel && !skinned_) || (!animatedModel && skinned_))
     {
         RemoveAllDecals();
-        skinned_ = animatedModel != 0;
-        bufferSizeDirty_ = true;
+        skinned_ = animatedModel != nullptr;
+        bufferDirty_ = true;
     }
 
     // Center the decal frustum on the world position
@@ -325,7 +336,7 @@ bool DecalSet::AddDecal(Drawable* target, const Vector3& worldPosition, const Qu
     {
         Skeleton& skeleton = animatedModel->GetSkeleton();
         unsigned numBones = skeleton.GetNumBones();
-        Bone* bestBone = 0;
+        Bone* bestBone = nullptr;
         float bestSize = 0.0f;
 
         for (unsigned i = 0; i < numBones; ++i)
@@ -583,7 +594,6 @@ void DecalSet::SetDecalsAttr(const PODVector<unsigned char>& value)
     UpdateEventSubscription(true);
     UpdateBatch();
     MarkDecalsDirty();
-    bufferSizeDirty_ = true;
 }
 
 ResourceRef DecalSet::GetMaterialAttr() const
@@ -694,10 +704,10 @@ void DecalSet::GetFaces(Vector<PODVector<DecalVertex> >& faces, Drawable* target
     if (!geometry || geometry->GetPrimitiveType() != TRIANGLE_LIST)
         return;
 
-    const unsigned char* positionData = 0;
-    const unsigned char* normalData = 0;
-    const unsigned char* skinningData = 0;
-    const unsigned char* indexData = 0;
+    const unsigned char* positionData = nullptr;
+    const unsigned char* normalData = nullptr;
+    const unsigned char* skinningData = nullptr;
+    const unsigned char* indexData = nullptr;
     unsigned positionStride = 0;
     unsigned normalStride = 0;
     unsigned skinningStride = 0;
@@ -717,7 +727,7 @@ void DecalSet::GetFaces(Vector<PODVector<DecalVertex> >& faces, Drawable* target
         if (!vb)
             continue;
 
-        unsigned elementMask = geometry->GetVertexElementMask(i);
+        unsigned elementMask = vb->GetElementMask();
         unsigned char* data = vb->GetShadowData();
         if (!data)
             continue;
@@ -729,12 +739,12 @@ void DecalSet::GetFaces(Vector<PODVector<DecalVertex> >& faces, Drawable* target
         }
         if (elementMask & MASK_NORMAL)
         {
-            normalData = data + vb->GetElementOffset(ELEMENT_NORMAL);
+            normalData = data + vb->GetElementOffset(SEM_NORMAL);
             normalStride = vb->GetVertexSize();
         }
         if (elementMask & MASK_BLENDWEIGHTS)
         {
-            skinningData = data + vb->GetElementOffset(ELEMENT_BLENDWEIGHTS);
+            skinningData = data + vb->GetElementOffset(SEM_BLENDWEIGHTS);
             skinningStride = vb->GetVertexSize();
         }
     }
@@ -743,8 +753,8 @@ void DecalSet::GetFaces(Vector<PODVector<DecalVertex> >& faces, Drawable* target
     if (!positionData)
     {
         // As a fallback, try to get the geometry's raw vertex/index data
-        unsigned elementMask;
-        geometry->GetRawData(positionData, positionStride, indexData, indexStride, elementMask);
+        const PODVector<VertexElement>* elements;
+        geometry->GetRawData(positionData, positionStride, indexData, indexStride, elements);
         if (!positionData)
         {
             URHO3D_LOGWARNING("Can not add decal, target drawable has no CPU-side geometry data");
@@ -804,8 +814,8 @@ void DecalSet::GetFace(Vector<PODVector<DecalVertex> >& faces, Drawable* target,
     unsigned positionStride, unsigned normalStride, unsigned skinningStride, const Frustum& frustum, const Vector3& decalNormal,
     float normalCutoff)
 {
-    bool hasNormals = normalData != 0;
-    bool hasSkinning = skinned_ && skinningData != 0;
+    bool hasNormals = normalData != nullptr;
+    bool hasSkinning = skinned_ && skinningData != nullptr;
 
     const Vector3& v0 = *((const Vector3*)(&positionData[i0 * positionStride]));
     const Vector3& v1 = *((const Vector3*)(&positionData[i1 * positionStride]));
@@ -824,9 +834,9 @@ void DecalSet::GetFace(Vector<PODVector<DecalVertex> >& faces, Drawable* target,
     const Vector3& n1 = hasNormals ? *((const Vector3*)(&normalData[i1 * normalStride])) : faceNormal;
     const Vector3& n2 = hasNormals ? *((const Vector3*)(&normalData[i2 * normalStride])) : faceNormal;
 
-    const unsigned char* s0 = hasSkinning ? &skinningData[i0 * skinningStride] : (const unsigned char*)0;
-    const unsigned char* s1 = hasSkinning ? &skinningData[i1 * skinningStride] : (const unsigned char*)0;
-    const unsigned char* s2 = hasSkinning ? &skinningData[i2 * skinningStride] : (const unsigned char*)0;
+    const unsigned char* s0 = hasSkinning ? &skinningData[i0 * skinningStride] : nullptr;
+    const unsigned char* s1 = hasSkinning ? &skinningData[i1 * skinningStride] : nullptr;
+    const unsigned char* s2 = hasSkinning ? &skinningData[i2 * skinningStride] : nullptr;
 
     // Check if face is too much away from the decal normal
     if (decalNormal.DotProduct((n0 + n1 + n2) / 3.0f) < normalCutoff)
@@ -888,7 +898,7 @@ bool DecalSet::GetBones(Drawable* target, unsigned batchIndex, const float* blen
     {
         if (blendWeights[i] > 0.0f)
         {
-            Bone* bone = 0;
+            Bone* bone = nullptr;
             if (geometrySkinMatrices.Empty())
                 bone = animatedModel->GetSkeleton().GetBone(blendIndices[i]);
             else if (blendIndices[i] < geometryBoneMappings[batchIndex].Size())
@@ -969,7 +979,7 @@ void DecalSet::TransformVertices(Decal& decal, const Matrix3x4& transform)
     for (PODVector<DecalVertex>::Iterator i = decal.vertices_.Begin(); i != decal.vertices_.End(); ++i)
     {
         i->position_ = transform * i->position_;
-        i->normal_ = (transform * i->normal_).Normalized();
+        i->normal_ = (transform * Vector4(i->normal_, 0.0f)).Normalized();
     }
 }
 
@@ -1000,22 +1010,21 @@ void DecalSet::CalculateBoundingBox()
     boundingBoxDirty_ = false;
 }
 
-void DecalSet::UpdateBufferSize()
-{
-    vertexBuffer_->SetSize(maxVertices_, skinned_ ? SKINNED_ELEMENT_MASK : STATIC_ELEMENT_MASK);
-    indexBuffer_->SetSize(maxIndices_, false);
-    geometry_->SetVertexBuffer(0, vertexBuffer_);
-
-    bufferDirty_ = true;
-    bufferSizeDirty_ = false;
-}
-
 void DecalSet::UpdateBuffers()
 {
+    unsigned newElementMask = skinned_ ? SKINNED_ELEMENT_MASK : STATIC_ELEMENT_MASK;
+    unsigned newVBSize = optimizeBufferSize_ ? numVertices_ : maxVertices_;
+    unsigned newIBSize = optimizeBufferSize_ ? numIndices_ : maxIndices_;
+    
+    if (vertexBuffer_->GetElementMask() != newElementMask || vertexBuffer_->GetVertexCount() != newVBSize)
+        vertexBuffer_->SetSize(newVBSize, newElementMask);
+    if (indexBuffer_->GetIndexCount() != newIBSize)
+        indexBuffer_->SetSize(newIBSize, false);
+    geometry_->SetVertexBuffer(0, vertexBuffer_);
     geometry_->SetDrawRange(TRIANGLE_LIST, 0, numIndices_, 0, numVertices_);
-
-    float* vertices = (float*)vertexBuffer_->Lock(0, numVertices_);
-    unsigned short* indices = (unsigned short*)indexBuffer_->Lock(0, numIndices_);
+    
+    float* vertices = numVertices_ ? (float*)vertexBuffer_->Lock(0, numVertices_) : nullptr;
+    unsigned short* indices = numIndices_ ? (unsigned short*)indexBuffer_->Lock(0, numIndices_) : nullptr;
 
     if (vertices && indices)
     {

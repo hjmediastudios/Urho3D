@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -33,31 +33,14 @@
 namespace Urho3D
 {
 
-IndexBuffer::IndexBuffer(Context* context, bool forceHeadless) :
-    Object(context),
-    GPUObject(forceHeadless ? (Graphics*)0 : GetSubsystem<Graphics>()),
-    indexCount_(0),
-    indexSize_(0),
-    lockState_(LOCK_NONE),
-    lockStart_(0),
-    lockCount_(0),
-    lockScratchData_(0),
-    shadowed_(false),
-    dynamic_(false)
+void IndexBuffer::OnDeviceLost()
 {
-    // Force shadowing mode if graphics subsystem does not exist
-    if (!graphics_)
-        shadowed_ = true;
-}
-
-IndexBuffer::~IndexBuffer()
-{
-    Release();
+    GPUObject::OnDeviceLost();
 }
 
 void IndexBuffer::OnDeviceReset()
 {
-    if (!object_)
+    if (!object_.name_)
     {
         Create();
         dataLost_ = !UpdateToGPU();
@@ -72,7 +55,7 @@ void IndexBuffer::Release()
 {
     Unlock();
 
-    if (object_)
+    if (object_.name_)
     {
         if (!graphics_)
             return;
@@ -80,46 +63,13 @@ void IndexBuffer::Release()
         if (!graphics_->IsDeviceLost())
         {
             if (graphics_->GetIndexBuffer() == this)
-                graphics_->SetIndexBuffer(0);
+                graphics_->SetIndexBuffer(nullptr);
 
-            glDeleteBuffers(1, &object_);
+            glDeleteBuffers(1, &object_.name_);
         }
 
-        object_ = 0;
+        object_.name_ = 0;
     }
-}
-
-void IndexBuffer::SetShadowed(bool enable)
-{
-    // If no graphics subsystem, can not disable shadowing
-    if (!graphics_)
-        enable = true;
-
-    if (enable != shadowed_)
-    {
-        if (enable && indexCount_ && indexSize_)
-            shadowData_ = new unsigned char[indexCount_ * indexSize_];
-        else
-            shadowData_.Reset();
-
-        shadowed_ = enable;
-    }
-}
-
-bool IndexBuffer::SetSize(unsigned indexCount, bool largeIndices, bool dynamic)
-{
-    Unlock();
-
-    dynamic_ = dynamic;
-    indexCount_ = indexCount;
-    indexSize_ = (unsigned)(largeIndices ? sizeof(unsigned) : sizeof(unsigned short));
-
-    if (shadowed_ && indexCount_ && indexSize_)
-        shadowData_ = new unsigned char[indexCount_ * indexSize_];
-    else
-        shadowData_.Reset();
-
-    return Create();
 }
 
 bool IndexBuffer::SetData(const void* data)
@@ -139,7 +89,7 @@ bool IndexBuffer::SetData(const void* data)
     if (shadowData_ && data != shadowData_.Get())
         memcpy(shadowData_.Get(), data, indexCount_ * indexSize_);
 
-    if (object_)
+    if (object_.name_)
     {
         if (!graphics_->IsDeviceLost())
         {
@@ -186,7 +136,7 @@ bool IndexBuffer::SetDataRange(const void* data, unsigned start, unsigned count,
     if (shadowData_ && shadowData_.Get() + start * indexSize_ != data)
         memcpy(shadowData_.Get() + start * indexSize_, data, count * indexSize_);
 
-    if (object_)
+    if (object_.name_)
     {
         if (!graphics_->IsDeviceLost())
         {
@@ -211,26 +161,27 @@ void* IndexBuffer::Lock(unsigned start, unsigned count, bool discard)
     if (lockState_ != LOCK_NONE)
     {
         URHO3D_LOGERROR("Index buffer already locked");
-        return 0;
+        return nullptr;
     }
 
     if (!indexSize_)
     {
         URHO3D_LOGERROR("Index size not defined, can not lock index buffer");
-        return 0;
+        return nullptr;
     }
 
     if (start + count > indexCount_)
     {
         URHO3D_LOGERROR("Illegal range for locking index buffer");
-        return 0;
+        return nullptr;
     }
 
     if (!count)
-        return 0;
+        return nullptr;
 
     lockStart_ = start;
     lockCount_ = count;
+    discardLock_ = discard;
 
     if (shadowData_)
     {
@@ -244,7 +195,7 @@ void* IndexBuffer::Lock(unsigned start, unsigned count, bool discard)
         return lockScratchData_;
     }
     else
-        return 0;
+        return nullptr;
 }
 
 void IndexBuffer::Unlock()
@@ -252,67 +203,21 @@ void IndexBuffer::Unlock()
     switch (lockState_)
     {
     case LOCK_SHADOW:
-        SetDataRange(shadowData_.Get() + lockStart_ * indexSize_, lockStart_, lockCount_);
+        SetDataRange(shadowData_.Get() + lockStart_ * indexSize_, lockStart_, lockCount_, discardLock_);
         lockState_ = LOCK_NONE;
         break;
 
     case LOCK_SCRATCH:
-        SetDataRange(lockScratchData_, lockStart_, lockCount_);
+        SetDataRange(lockScratchData_, lockStart_, lockCount_, discardLock_);
         if (graphics_)
             graphics_->FreeScratchBuffer(lockScratchData_);
-        lockScratchData_ = 0;
+        lockScratchData_ = nullptr;
         lockState_ = LOCK_NONE;
         break;
 
     default:
         break;
     }
-}
-
-bool IndexBuffer::GetUsedVertexRange(unsigned start, unsigned count, unsigned& minVertex, unsigned& vertexCount)
-{
-    if (!shadowData_)
-    {
-        URHO3D_LOGERROR("Used vertex range can only be queried from an index buffer with shadow data");
-        return false;
-    }
-
-    if (start + count > indexCount_)
-    {
-        URHO3D_LOGERROR("Illegal index range for querying used vertices");
-        return false;
-    }
-
-    minVertex = M_MAX_UNSIGNED;
-    unsigned maxVertex = 0;
-
-    if (indexSize_ == sizeof(unsigned))
-    {
-        unsigned* indices = ((unsigned*)shadowData_.Get()) + start;
-
-        for (unsigned i = 0; i < count; ++i)
-        {
-            if (indices[i] < minVertex)
-                minVertex = indices[i];
-            if (indices[i] > maxVertex)
-                maxVertex = indices[i];
-        }
-    }
-    else
-    {
-        unsigned short* indices = ((unsigned short*)shadowData_.Get()) + start;
-
-        for (unsigned i = 0; i < count; ++i)
-        {
-            if (indices[i] < minVertex)
-                minVertex = indices[i];
-            if (indices[i] > maxVertex)
-                maxVertex = indices[i];
-        }
-    }
-
-    vertexCount = maxVertex - minVertex + 1;
-    return true;
 }
 
 bool IndexBuffer::Create()
@@ -331,16 +236,16 @@ bool IndexBuffer::Create()
             return true;
         }
 
-        if (!object_)
-            glGenBuffers(1, &object_);
-        if (!object_)
+        if (!object_.name_)
+            glGenBuffers(1, &object_.name_);
+        if (!object_.name_)
         {
             URHO3D_LOGERROR("Failed to create index buffer");
             return false;
         }
 
         graphics_->SetIndexBuffer(this);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indexCount_ * indexSize_, 0, dynamic_ ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indexCount_ * indexSize_, nullptr, dynamic_ ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW);
     }
 
     return true;
@@ -348,10 +253,21 @@ bool IndexBuffer::Create()
 
 bool IndexBuffer::UpdateToGPU()
 {
-    if (object_ && shadowData_)
+    if (object_.name_ && shadowData_)
         return SetData(shadowData_.Get());
     else
         return false;
+}
+
+void* IndexBuffer::MapBuffer(unsigned start, unsigned count, bool discard)
+{
+    // Never called on OpenGL
+    return nullptr;
+}
+
+void IndexBuffer::UnmapBuffer()
+{
+    // Never called on OpenGL
 }
 
 }

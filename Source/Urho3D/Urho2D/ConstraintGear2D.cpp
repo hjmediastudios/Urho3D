@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -58,7 +58,7 @@ void ConstraintGear2D::SetOwnerConstraint(Constraint2D* constraint)
         return;
 
     if (ownerConstraint_)
-        ownerConstraint_->SetAttachedConstraint(0);
+        ownerConstraint_->SetAttachedConstraint(nullptr);
 
     ownerConstraint_ = constraint;
 
@@ -76,7 +76,7 @@ void ConstraintGear2D::SetOtherConstraint(Constraint2D* constraint)
         return;
 
     if (otherConstraint_)
-        otherConstraint_->SetAttachedConstraint(0);
+        otherConstraint_->SetAttachedConstraint(nullptr);
 
     otherConstraint_ = constraintPtr;
 
@@ -94,27 +94,31 @@ void ConstraintGear2D::SetRatio(float ratio)
 
     jointDef_.ratio = ratio;
 
-    RecreateJoint();
+    if (joint_)
+        static_cast<b2GearJoint*>(joint_)->SetRatio(ratio);
+    else
+        RecreateJoint();
+
     MarkNetworkUpdate();
 }
 
 b2JointDef* ConstraintGear2D::GetJointDef()
 {
     if (!ownerBody_ || !otherBody_)
-        return 0;
+        return nullptr;
 
     b2Body* bodyA = ownerBody_->GetBody();
     b2Body* bodyB = otherBody_->GetBody();
     if (!bodyA || !bodyB)
-        return 0;
+        return nullptr;
 
     if (!ownerConstraint_ || !otherConstraint_)
-        return 0;
+        return nullptr;
 
     b2Joint* jointA = ownerConstraint_->GetJoint();
     b2Joint* jointB = otherConstraint_->GetJoint();
     if (!jointA || !jointB)
-        return 0;
+        return nullptr;
 
     InitializeJointDef(&jointDef_);
     jointDef_.joint1 = jointA;

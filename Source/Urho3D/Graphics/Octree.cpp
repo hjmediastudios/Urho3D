@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -78,7 +78,7 @@ Octant::Octant(const BoundingBox& box, unsigned level, Octant* parent, Octree* r
     Initialize(box);
 
     for (unsigned i = 0; i < NUM_OCTANTS; ++i)
-        children_[i] = 0;
+        children_[i] = nullptr;
 }
 
 Octant::~Octant()
@@ -132,7 +132,7 @@ void Octant::DeleteChild(unsigned index)
 {
     assert(index < NUM_OCTANTS);
     delete children_[index];
-    children_[index] = 0;
+    children_[index] = nullptr;
 }
 
 void Octant::InsertDrawable(Drawable* drawable)
@@ -195,11 +195,11 @@ bool Octant::CheckDrawableFit(const BoundingBox& box) const
 
 void Octant::ResetRoot()
 {
-    root_ = 0;
+    root_ = nullptr;
 
     // The whole octree is being destroyed, just detach the drawables
     for (PODVector<Drawable*>::Iterator i = drawables_.Begin(); i != drawables_.End(); ++i)
-        (*i)->SetOctant(0);
+        (*i)->SetOctant(nullptr);
 
     for (unsigned i = 0; i < NUM_OCTANTS; ++i)
     {
@@ -314,7 +314,7 @@ void Octant::GetDrawablesOnlyInternal(RayOctreeQuery& query, PODVector<Drawable*
 
 Octree::Octree(Context* context) :
     Component(context),
-    Octant(BoundingBox(-DEFAULT_OCTREE_SIZE, DEFAULT_OCTREE_SIZE), 0, 0, this),
+    Octant(BoundingBox(-DEFAULT_OCTREE_SIZE, DEFAULT_OCTREE_SIZE), 0, nullptr, this),
     numLevels_(DEFAULT_OCTREE_LEVELS)
 {
     // If the engine is running headless, subscribe to RenderUpdate events for manually updating the octree
@@ -327,7 +327,6 @@ Octree::~Octree()
 {
     // Reset root pointer from all child octants now so that they do not move their drawables to root
     drawableUpdates_.Clear();
-    drawableReinsertions_.Clear();
     ResetRoot();
 }
 
@@ -370,11 +369,17 @@ void Octree::SetSize(const BoundingBox& box, unsigned numLevels)
 
     Initialize(box);
     numDrawables_ = drawables_.Size();
-    numLevels_ = (unsigned)Max((int)numLevels, 1);
+    numLevels_ = Max(numLevels, 1U);
 }
 
 void Octree::Update(const FrameInfo& frame)
 {
+    if (!Thread::IsMainThread())
+    {
+        URHO3D_LOGERROR("Octree::Update() can not be called from worker threads");
+        return;
+    }
+
     // Let drawables update themselves before reinsertion. This can be used for animation
     if (!drawableUpdates_.Empty())
     {
@@ -411,6 +416,24 @@ void Octree::Update(const FrameInfo& frame)
 
         queue->Complete(M_MAX_UNSIGNED);
         scene->EndThreadedUpdate();
+    }
+
+    // If any drawables were inserted during threaded update, update them now from the main thread
+    if (!threadedDrawableUpdates_.Empty())
+    {
+        URHO3D_PROFILE(UpdateDrawablesQueuedDuringUpdate);
+
+        for (PODVector<Drawable*>::ConstIterator i = threadedDrawableUpdates_.Begin(); i != threadedDrawableUpdates_.End(); ++i)
+        {
+            Drawable* drawable = *i;
+            if (drawable)
+            {
+                drawable->Update(frame);
+                drawableUpdates_.Push(drawable);
+            }
+        }
+
+        threadedDrawableUpdates_.Clear();
     }
 
     // Notify drawable update being finished. Custom animation (eg. IK) can be done at this point
@@ -541,7 +564,7 @@ void Octree::QueueUpdate(Drawable* drawable)
     if (scene && scene->IsThreadedUpdate())
     {
         MutexLock lock(octreeMutex_);
-        drawableUpdates_.Push(drawable);
+        threadedDrawableUpdates_.Push(drawable);
     }
     else
         drawableUpdates_.Push(drawable);
@@ -551,6 +574,8 @@ void Octree::QueueUpdate(Drawable* drawable)
 
 void Octree::CancelUpdate(Drawable* drawable)
 {
+    // This doesn't have to take into account scene being in threaded update, because it is called only
+    // when removing a drawable from octree, which should only ever happen from the main thread.
     drawableUpdates_.Remove(drawable);
     drawable->updateQueued_ = false;
 }
@@ -573,7 +598,7 @@ void Octree::HandleRenderUpdate(StringHash eventType, VariantMap& eventData)
     FrameInfo frame;
     frame.frameNumber_ = GetSubsystem<Time>()->GetFrameNumber();
     frame.timeStep_ = eventData[P_TIMESTEP].GetFloat();
-    frame.camera_ = 0;
+    frame.camera_ = nullptr;
 
     Update(frame);
 }

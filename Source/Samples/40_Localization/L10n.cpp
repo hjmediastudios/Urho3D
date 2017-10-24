@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -51,8 +51,10 @@ void L10n::Start()
     // Execute base class startup
     Sample::Start();
 
-    // Enable OS cursor
-    GetSubsystem<Input>()->SetMouseVisible(true);
+    // Enable and center OS cursor
+    Input* input = GetSubsystem<Input>();
+    input->SetMouseVisible(true);
+    input->CenterMousePosition();
 
     // Load strings from JSON files and subscribe to the change language event
     InitLocalizationSystem();
@@ -62,13 +64,16 @@ void L10n::Start()
 
     // Init the user interface
     CreateGUI();
+
+    // Set the mouse mode to use in the sample
+    Sample::InitMouseMode(MM_FREE);
 }
 
 void L10n::InitLocalizationSystem()
 {
     Localization* l10n = GetSubsystem<Localization>();
     // JSON files must be in UTF8 encoding without BOM
-    // The first founded language will be set as current
+    // The first found language will be set as current
     l10n->LoadJSONFile("StringsEnRu.json");
     // You can load multiple files
     l10n->LoadJSONFile("StringsDe.json");
@@ -215,7 +220,8 @@ void L10n::HandleChangeLangButtonPressed(StringHash eventType, VariantMap& event
 
 void L10n::HandleQuitButtonPressed(StringHash eventType, VariantMap& eventData)
 {
-    engine_->Exit();
+    if (GetPlatform() != "Web")
+        engine_->Exit();
 }
 
 // You can manually change texts, sprites and other aspects of the game when language is changed
@@ -224,10 +230,10 @@ void L10n::HandleChangeLanguage(StringHash eventType, VariantMap& eventData)
     Localization* l10n = GetSubsystem<Localization>();
     UIElement* uiRoot = GetSubsystem<UI>()->GetRoot();
 
-    Text* windowTitle = static_cast<Text*>(uiRoot->GetChild("WindowTitle", true));
+    Text* windowTitle = uiRoot->GetChildStaticCast<Text>("WindowTitle", true);
     windowTitle->SetText(l10n->Get("title") + " (" + String(l10n->GetLanguageIndex()) + " " + l10n->GetLanguage() + ")");
 
-    Text* buttonText = static_cast<Text*>(uiRoot->GetChild("ButtonTextQuit", true));
+    Text* buttonText = uiRoot->GetChildStaticCast<Text>("ButtonTextQuit", true);
     buttonText->SetText(l10n->Get("quit"));
 
     Text3D* text3D = scene_->GetChild("Text3D")->GetComponent<Text3D>();

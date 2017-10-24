@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,12 +27,12 @@
 #include "../Container/HashSet.h"
 #include "../Resource/Resource.h"
 
-class asIObjectType;
 class asIScriptContext;
 class asIScriptEngine;
 class asIScriptFunction;
 class asIScriptModule;
 class asIScriptObject;
+class asITypeInfo;
 
 namespace Urho3D
 {
@@ -51,29 +51,33 @@ public:
     /// Construct.
     ScriptFile(Context* context);
     /// Destruct.
-    virtual ~ScriptFile();
+    virtual ~ScriptFile() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Load resource from stream. May be called from a worker thread. Return true if successful.
-    virtual bool BeginLoad(Deserializer& source);
+    virtual bool BeginLoad(Deserializer& source) override;
     /// Finish resource loading. Always called from the main thread. Return true if successful.
-    virtual bool EndLoad();
+    virtual bool EndLoad() override;
 
     /// Add a scripted event handler.
-    virtual void AddEventHandler(StringHash eventType, const String& handlerName);
+    virtual void AddEventHandler(StringHash eventType, const String& handlerName) override;
     /// Add a scripted event handler for a specific sender.
-    virtual void AddEventHandler(Object* sender, StringHash eventType, const String& handlerName);
+    virtual void AddEventHandler(Object* sender, StringHash eventType, const String& handlerName) override;
     /// Remove a scripted event handler.
-    virtual void RemoveEventHandler(StringHash eventType);
+    virtual void RemoveEventHandler(StringHash eventType) override;
     /// Remove a scripted event handler for a specific sender.
-    virtual void RemoveEventHandler(Object* sender, StringHash eventType);
+    virtual void RemoveEventHandler(Object* sender, StringHash eventType) override;
     /// Remove all scripted event handlers for a specific sender.
-    virtual void RemoveEventHandlers(Object* sender);
+    virtual void RemoveEventHandlers(Object* sender) override;
     /// Remove all scripted event handlers.
-    virtual void RemoveEventHandlers();
+    virtual void RemoveEventHandlers() override;
     /// Remove all scripted event handlers, except those listed.
-    virtual void RemoveEventHandlersExcept(const PODVector<StringHash>& exceptions);
+    virtual void RemoveEventHandlersExcept(const PODVector<StringHash>& exceptions) override;
+    /// Return whether has subscribed to an event.
+    virtual bool HasEventHandler(StringHash eventType) const override;
+    /// Return whether has subscribed to a specific sender's event.
+    virtual bool HasEventHandler(Object* sender, StringHash eventType) const override;
 
     /// Query for a function by declaration and execute if found.
     bool Execute(const String& declaration, const VariantVector& parameters = Variant::emptyVariantVector, bool unprepare = true);
@@ -132,11 +136,11 @@ private:
     /// Encountered include files during script file loading.
     HashSet<String> includeFiles_;
     /// Search cache for checking whether script classes implement "ScriptObject" interface.
-    HashMap<asIObjectType*, bool> validClasses_;
+    HashMap<asITypeInfo*, bool> validClasses_;
     /// Search cache for functions.
     HashMap<String, asIScriptFunction*> functions_;
     /// Search cache for methods.
-    HashMap<asIObjectType*, HashMap<String, asIScriptFunction*> > methods_;
+    HashMap<asITypeInfo*, HashMap<String, asIScriptFunction*> > methods_;
     /// Delayed function calls.
     Vector<DelayedCall> delayedCalls_;
     /// Event helper objects for handling procedural or non-ScriptInstance script events
@@ -154,9 +158,9 @@ class URHO3D_API ScriptEventInvoker : public Object
 
 public:
     /// Constructor, will create the asILockableSharedBool if a ScriptObject is passed in.
-    ScriptEventInvoker(ScriptFile* file, asIScriptObject* object = 0);
+    ScriptEventInvoker(ScriptFile* file, asIScriptObject* object = nullptr);
     /// Destructor, release the ref it we still hold it.
-    ~ScriptEventInvoker();
+    virtual ~ScriptEventInvoker() override;
 
     /// Get the asIScriptObject to call the method on, can be null.
     asIScriptObject* GetObject() const { return object_; }

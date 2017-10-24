@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -36,15 +36,15 @@ namespace Urho3D
 #ifdef _WIN32
 
 Condition::Condition() :
-    event_(0)
+    event_(nullptr)
 {
-    event_ = CreateEvent(0, FALSE, FALSE, 0);
+    event_ = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 }
 
 Condition::~Condition()
 {
     CloseHandle((HANDLE)event_);
-    event_ = 0;
+    event_ = nullptr;
 }
 
 void Condition::Set()

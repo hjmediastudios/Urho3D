@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -46,6 +46,29 @@ extern const char* NAVIGATION_CATEGORY;
 static const unsigned DEFAULT_MAX_AGENTS = 512;
 static const float DEFAULT_MAX_AGENT_RADIUS = 0.f;
 
+static const StringVector filterTypesStructureElementNames =
+{
+    "Query Filter Type Count",
+    "   Include Flags",
+    "   Exclude Flags",
+    "   >AreaCost"
+};
+
+static const StringVector obstacleAvoidanceTypesStructureElementNames =
+{
+    "Obstacle Avoid. Type Count",
+    "   Velocity Bias",
+    "   Desired Velocity Weight",
+    "   Current Velocity Weight",
+    "   Side Bias Weight",
+    "   Time of Impact Weight",
+    "   Time Horizon",
+    "   Grid Size",
+    "   Adaptive Divs",
+    "   Adaptive Rings",
+    "   Adaptive Depth"
+};
+
 void CrowdAgentUpdateCallback(dtCrowdAgent* ag, float dt)
 {
     static_cast<CrowdAgent*>(ag->params.userData)->OnCrowdUpdate(ag, dt);
@@ -53,8 +76,7 @@ void CrowdAgentUpdateCallback(dtCrowdAgent* ag, float dt)
 
 CrowdManager::CrowdManager(Context* context) :
     Component(context),
-    crowd_(0),
-    navigationMesh_(0),
+    crowd_(nullptr),
     navigationMeshId_(0),
     maxAgents_(DEFAULT_MAX_AGENTS),
     maxAgentRadius_(DEFAULT_MAX_AGENT_RADIUS),
@@ -70,7 +92,7 @@ CrowdManager::CrowdManager(Context* context) :
 CrowdManager::~CrowdManager()
 {
     dtFreeCrowd(crowd_);
-    crowd_ = 0;
+    crowd_ = nullptr;
 }
 
 void CrowdManager::RegisterObject(Context* context)
@@ -80,16 +102,18 @@ void CrowdManager::RegisterObject(Context* context)
     URHO3D_ATTRIBUTE("Max Agents", unsigned, maxAgents_, DEFAULT_MAX_AGENTS, AM_DEFAULT);
     URHO3D_ATTRIBUTE("Max Agent Radius", float, maxAgentRadius_, DEFAULT_MAX_AGENT_RADIUS, AM_DEFAULT);
     URHO3D_ATTRIBUTE("Navigation Mesh", unsigned, navigationMeshId_, 0, AM_DEFAULT | AM_COMPONENTID);
-    URHO3D_MIXED_ACCESSOR_ATTRIBUTE("Filter Types", GetQueryFilterTypesAttr, SetQueryFilterTypesAttr, VariantVector,
-        Variant::emptyVariantVector, AM_DEFAULT);
+    URHO3D_MIXED_ACCESSOR_ATTRIBUTE("Filter Types", GetQueryFilterTypesAttr, SetQueryFilterTypesAttr,
+        VariantVector, Variant::emptyVariantVector, AM_DEFAULT)
+        .SetMetadata(AttributeMetadata::P_VECTOR_STRUCT_ELEMENTS, filterTypesStructureElementNames);
     URHO3D_MIXED_ACCESSOR_ATTRIBUTE("Obstacle Avoidance Types", GetObstacleAvoidanceTypesAttr, SetObstacleAvoidanceTypesAttr,
-        VariantVector, Variant::emptyVariantVector, AM_DEFAULT);
+        VariantVector, Variant::emptyVariantVector, AM_DEFAULT)
+        .SetMetadata(AttributeMetadata::P_VECTOR_STRUCT_ELEMENTS, obstacleAvoidanceTypesStructureElementNames);
 }
 
 void CrowdManager::ApplyAttributes()
 {
     // Values from Editor, saved-file, or network must be checked before applying
-    maxAgents_ = (unsigned)Max(1, maxAgents_);
+    maxAgents_ = Max(1U, maxAgents_);
     maxAgentRadius_ = Max(0.f, maxAgentRadius_);
 
     bool navMeshChange = false;
@@ -97,10 +121,10 @@ void CrowdManager::ApplyAttributes()
     if (scene && navigationMeshId_)
     {
         NavigationMesh* navMesh = dynamic_cast<NavigationMesh*>(scene->GetComponent(navigationMeshId_));
-        if (navMesh)
+        if (navMesh && navMesh != navigationMesh_)
         {
-            navMeshChange = navMesh != navigationMesh_;
-            navigationMesh_ = navMesh;
+            SetNavigationMesh(navMesh); // This will also CreateCrowd(), so the rest of the function is unnecessary
+            return;
         }
     }
     // In case of receiving an invalid component id, revert it back to the existing navmesh component id (if any)
@@ -127,7 +151,7 @@ void CrowdManager::DrawDebugGeometry(DebugRenderer* debug, bool depthTest)
             crowdAgent->DrawDebugGeometry(debug, depthTest);
 
             // Draw move target if any
-            if (crowdAgent->GetTargetState() == CA_TARGET_NONE)
+            if (crowdAgent->GetTargetState() == CA_TARGET_NONE || crowdAgent->GetTargetState() == CA_TARGET_VELOCITY)
                 continue;
 
             Color color(0.6f, 0.2f, 0.2f, 1.0f);
@@ -235,10 +259,23 @@ void CrowdManager::SetMaxAgentRadius(float maxAgentRadius)
 
 void CrowdManager::SetNavigationMesh(NavigationMesh* navMesh)
 {
+    UnsubscribeFromEvent(E_COMPONENTADDED);
+    UnsubscribeFromEvent(E_NAVIGATION_MESH_REBUILT);
+    UnsubscribeFromEvent(E_COMPONENTREMOVED);
+
     if (navMesh != navigationMesh_)     // It is possible to reset navmesh pointer back to 0
     {
+        Scene* scene = GetScene();
+
         navigationMesh_ = navMesh;
         navigationMeshId_ = navMesh ? navMesh->GetID() : 0;
+
+        if (navMesh)
+        {
+            SubscribeToEvent(navMesh, E_NAVIGATION_MESH_REBUILT, URHO3D_HANDLER(CrowdManager, HandleNavMeshChanged));
+            SubscribeToEvent(scene, E_COMPONENTREMOVED, URHO3D_HANDLER(CrowdManager, HandleNavMeshChanged));
+        }
+
         CreateCrowd();
         MarkNetworkUpdate();
     }
@@ -251,7 +288,7 @@ void CrowdManager::SetQueryFilterTypesAttr(const VariantVector& value)
 
     unsigned index = 0;
     unsigned queryFilterType = 0;
-    numQueryFilterTypes_ = index < value.Size() ? Min(value[index++].GetUInt(), DT_CROWD_MAX_QUERY_FILTER_TYPE) : 0;
+    numQueryFilterTypes_ = index < value.Size() ? Min(value[index++].GetUInt(), (unsigned)DT_CROWD_MAX_QUERY_FILTER_TYPE) : 0;
 
     while (queryFilterType < numQueryFilterTypes_)
     {
@@ -262,9 +299,9 @@ void CrowdManager::SetQueryFilterTypesAttr(const VariantVector& value)
             filter->setIncludeFlags((unsigned short)value[index++].GetUInt());
             filter->setExcludeFlags((unsigned short)value[index++].GetUInt());
             unsigned prevNumAreas = numAreas_[queryFilterType];
-            numAreas_[queryFilterType] = Min(value[index++].GetUInt(), DT_MAX_AREAS);
+            numAreas_[queryFilterType] = Min(value[index++].GetUInt(), (unsigned)DT_MAX_AREAS);
 
-            // Must loop thru based on previous number of areas, the new area cost (if any) can only be set in the next attribute get/set iteration
+            // Must loop through based on previous number of areas, the new area cost (if any) can only be set in the next attribute get/set iteration
             if (index + prevNumAreas <= value.Size())
             {
                 for (unsigned i = 0; i < prevNumAreas; ++i)
@@ -320,7 +357,7 @@ void CrowdManager::SetObstacleAvoidanceTypesAttr(const VariantVector& value)
 
     unsigned index = 0;
     unsigned obstacleAvoidanceType = 0;
-    numObstacleAvoidanceTypes_ = index < value.Size() ? Min(value[index++].GetUInt(), DT_CROWD_MAX_OBSTAVOIDANCE_PARAMS) : 0;
+    numObstacleAvoidanceTypes_ = index < value.Size() ? Min(value[index++].GetUInt(), (unsigned)DT_CROWD_MAX_OBSTAVOIDANCE_PARAMS) : 0;
 
     while (obstacleAvoidanceType < numObstacleAvoidanceTypes_)
     {
@@ -388,7 +425,7 @@ Vector3 CrowdManager::GetRandomPointInCircle(const Vector3& center, float radius
     if (randomRef)
         *randomRef = 0;
     return crowd_ && navigationMesh_ ?
-        navigationMesh_->GetRandomPointInCircle(center, radius, Vector3(crowd_->getQueryExtents()), 
+        navigationMesh_->GetRandomPointInCircle(center, radius, Vector3(crowd_->getQueryExtents()),
             crowd_->getFilter(queryFilterType), randomRef) : center;
 }
 
@@ -399,7 +436,7 @@ float CrowdManager::GetDistanceToWall(const Vector3& point, float radius, int qu
     if (hitNormal)
         *hitNormal = Vector3::DOWN;
     return crowd_ && navigationMesh_ ?
-        navigationMesh_->GetDistanceToWall(point, radius, Vector3(crowd_->getQueryExtents()), crowd_->getFilter(queryFilterType), 
+        navigationMesh_->GetDistanceToWall(point, radius, Vector3(crowd_->getQueryExtents()), crowd_->getFilter(queryFilterType),
             hitPos, hitNormal) : radius;
 }
 
@@ -508,7 +545,7 @@ VariantVector CrowdManager::GetObstacleAvoidanceTypesAttr() const
 const CrowdObstacleAvoidanceParams& CrowdManager::GetObstacleAvoidanceParams(unsigned obstacleAvoidanceType) const
 {
     static const CrowdObstacleAvoidanceParams EMPTY_PARAMS = CrowdObstacleAvoidanceParams();
-    const dtObstacleAvoidanceParams* params = crowd_ ? crowd_->getObstacleAvoidanceParams(obstacleAvoidanceType) : 0;
+    const dtObstacleAvoidanceParams* params = crowd_ ? crowd_->getObstacleAvoidanceParams(obstacleAvoidanceType) : nullptr;
     return params ? *reinterpret_cast<const CrowdObstacleAvoidanceParams*>(params) : EMPTY_PARAMS;
 }
 
@@ -539,7 +576,7 @@ bool CrowdManager::CreateCrowd()
 
     // Preserve the existing crowd configuration before recreating it
     VariantVector queryFilterTypeConfiguration, obstacleAvoidanceTypeConfiguration;
-    bool recreate = crowd_ != 0;
+    bool recreate = crowd_ != nullptr;
     if (recreate)
     {
         queryFilterTypeConfiguration = GetQueryFilterTypesAttr();
@@ -589,6 +626,8 @@ int CrowdManager::AddAgent(CrowdAgent* agent, const Vector3& pos)
         agent->radius_ = navigationMesh_->GetAgentRadius();
     if (agent->height_ == 0.f)
         agent->height_ = navigationMesh_->GetAgentHeight();
+    // dtCrowd::addAgent() requires the query filter type to find the nearest position on navmesh as the initial agent's position
+    params.queryFilterType = (unsigned char)agent->GetQueryFilterType();
     return crowd_->addAgent(pos.Data(), &params);
 }
 
@@ -598,7 +637,7 @@ void CrowdManager::RemoveAgent(CrowdAgent* agent)
         return;
     dtCrowdAgent* agt = crowd_->getEditableAgent(agent->GetAgentCrowdId());
     if (agt)
-        agt->params.userData = 0;
+        agt->params.userData = nullptr;
     crowd_->removeAgent(agent->GetAgentCrowdId());
 }
 
@@ -617,24 +656,26 @@ void CrowdManager::OnSceneSet(Scene* scene)
         SubscribeToEvent(scene, E_SCENESUBSYSTEMUPDATE, URHO3D_HANDLER(CrowdManager, HandleSceneSubsystemUpdate));
 
         // Attempt to auto discover a NavigationMesh component (or its derivative) under the scene node
-        NavigationMesh* navMesh = scene->GetDerivedComponent<NavigationMesh>(true);
-        if (navMesh)
+        if (navigationMeshId_ == 0)
         {
-            navigationMesh_ = navMesh;
-            navigationMeshId_ = navMesh->GetID();
-            CreateCrowd();
-
-            SubscribeToEvent(navMesh->GetNode(), E_NAVIGATION_MESH_REBUILT, URHO3D_HANDLER(CrowdManager, HandleNavMeshChanged));
-            SubscribeToEvent(navMesh->GetNode(), E_COMPONENTREMOVED, URHO3D_HANDLER(CrowdManager, HandleNavMeshChanged));
+            NavigationMesh* navMesh = scene->GetDerivedComponent<NavigationMesh>(true);
+            if (navMesh)
+                SetNavigationMesh(navMesh);
+            else
+            {
+                // If not found, attempt to find in a delayed manner
+                SubscribeToEvent(scene, E_COMPONENTADDED, URHO3D_HANDLER(CrowdManager, HandleComponentAdded));
+            }
         }
     }
     else
     {
         UnsubscribeFromEvent(E_SCENESUBSYSTEMUPDATE);
         UnsubscribeFromEvent(E_NAVIGATION_MESH_REBUILT);
+        UnsubscribeFromEvent(E_COMPONENTADDED);
         UnsubscribeFromEvent(E_COMPONENTREMOVED);
 
-        navigationMesh_ = 0;
+        navigationMesh_ = nullptr;
     }
 }
 
@@ -642,17 +683,17 @@ void CrowdManager::Update(float delta)
 {
     assert(crowd_ && navigationMesh_);
     URHO3D_PROFILE(UpdateCrowd);
-    crowd_->update(delta, 0);
+    crowd_->update(delta, nullptr);
 }
 
 const dtCrowdAgent* CrowdManager::GetDetourCrowdAgent(int agent) const
 {
-    return crowd_ ? crowd_->getAgent(agent) : 0;
+    return crowd_ ? crowd_->getAgent(agent) : nullptr;
 }
 
 const dtQueryFilter* CrowdManager::GetDetourQueryFilter(unsigned queryFilterType) const
 {
-    return crowd_ ? crowd_->getFilter(queryFilterType) : 0;
+    return crowd_ ? crowd_->getFilter(queryFilterType) : nullptr;
 }
 
 void CrowdManager::HandleSceneSubsystemUpdate(StringHash eventType, VariantMap& eventData)
@@ -672,8 +713,10 @@ void CrowdManager::HandleNavMeshChanged(StringHash eventType, VariantMap& eventD
     NavigationMesh* navMesh;
     if (eventType == E_NAVIGATION_MESH_REBUILT)
     {
-        // The mesh being rebuilt may not have existed before
         navMesh = static_cast<NavigationMesh*>(eventData[NavigationMeshRebuilt::P_MESH].GetPtr());
+        // Reset internal pointer so that the same navmesh can be reassigned and the crowd creation be reattempted
+        if (navMesh == navigationMesh_)
+            navigationMesh_.Reset();
     }
     else
     {
@@ -683,9 +726,21 @@ void CrowdManager::HandleNavMeshChanged(StringHash eventType, VariantMap& eventD
         if (navMesh != navigationMesh_)
             return;
         // Since this is a component removed event, reset our own navmesh pointer
-        navMesh = 0;
+        navMesh = nullptr;
     }
+
     SetNavigationMesh(navMesh);
+}
+
+void CrowdManager::HandleComponentAdded(StringHash eventType, VariantMap& eventData)
+{
+    Scene* scene = GetScene();
+    if (scene)
+    {
+        NavigationMesh* navMesh = scene->GetDerivedComponent<NavigationMesh>(true);
+        if (navMesh)
+            SetNavigationMesh(navMesh);
+    }
 }
 
 }

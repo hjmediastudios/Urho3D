@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -30,7 +30,7 @@
 #include "../IO/Log.h"
 #include "../Resource/ResourceCache.h"
 #include "../Resource/XMLFile.h"
-
+#define STB_VORBIS_HEADER_ONLY
 #include <STB/stb_vorbis.h>
 
 #include "../DebugNew.h"
@@ -59,9 +59,9 @@ struct WavHeader
 static const unsigned IP_SAFETY = 4;
 
 Sound::Sound(Context* context) :
-    Resource(context),
-    repeat_(0),
-    end_(0),
+    ResourceWithMetadata(context),
+    repeat_(nullptr),
+    end_(nullptr),
     dataSize_(0),
     frequency_(44100),
     looped_(false),
@@ -108,7 +108,7 @@ bool Sound::LoadOggVorbis(Deserializer& source)
 
     // Check for validity of data
     int error;
-    stb_vorbis* vorbis = stb_vorbis_open_memory((unsigned char*)data.Get(), dataSize, &error, 0);
+    stb_vorbis* vorbis = stb_vorbis_open_memory((unsigned char*)data.Get(), dataSize, &error, nullptr);
     if (!vorbis)
     {
         URHO3D_LOGERROR("Could not read Ogg Vorbis data from " + source.GetName());
@@ -348,9 +348,9 @@ void Sound::LoadParameters()
         return;
 
     XMLElement rootElem = file->GetRoot();
-    XMLElement paramElem = rootElem.GetChild();
+    LoadMetadataFromXML(rootElem);
 
-    while (paramElem)
+    for (XMLElement paramElem = rootElem.GetChild(); paramElem; paramElem = paramElem.GetNext())
     {
         String name = paramElem.GetName();
 
@@ -373,8 +373,6 @@ void Sound::LoadParameters()
             if (paramElem.HasAttribute("start") && paramElem.HasAttribute("end"))
                 SetLoop((unsigned)paramElem.GetInt("start"), (unsigned)paramElem.GetInt("end"));
         }
-
-        paramElem = paramElem.GetNext();
     }
 }
 

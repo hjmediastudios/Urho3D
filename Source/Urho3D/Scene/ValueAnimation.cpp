@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,7 @@
 #include "../Precompiled.h"
 
 #include "../Core/Context.h"
+#include "../Core/StringUtils.h"
 #include "../IO/Deserializer.h"
 #include "../IO/Log.h"
 #include "../IO/Serializer.h"
@@ -39,14 +40,15 @@ namespace Urho3D
 
 const char* interpMethodNames[] =
 {
+    "None",
     "Linear",
     "Spline",
-    0
+    nullptr
 };
 
 ValueAnimation::ValueAnimation(Context* context) :
     Resource(context),
-    owner_(0),
+    owner_(nullptr),
     interpolationMethod_(IM_LINEAR),
     splineTension_(0.5f),
     valueType_(VAR_NONE),
@@ -92,15 +94,7 @@ bool ValueAnimation::LoadXML(const XMLElement& source)
     eventFrames_.Clear();
 
     String interpMethodString = source.GetAttribute("interpolationmethod");
-    InterpMethod method = IM_LINEAR;
-    for (int i = 0; i <= IM_SPLINE; ++i)
-    {
-        if (interpMethodString == interpMethodNames[i])
-        {
-            method = (InterpMethod)i;
-            break;
-        }
-    }
+    InterpMethod method = (InterpMethod)GetStringListIndex(interpMethodString.CString(), interpMethodNames, IM_LINEAR);
 
     SetInterpolationMethod(method);
     if (interpolationMethod_ == IM_SPLINE)
@@ -162,15 +156,7 @@ bool ValueAnimation::LoadJSON(const JSONValue& source)
     eventFrames_.Clear();
 
     String interpMethodString = source.Get("interpolationmethod").GetString();
-    InterpMethod method = IM_LINEAR;
-    for (int i = 0; i <= IM_SPLINE; ++i)
-    {
-        if (interpMethodString == interpMethodNames[i])
-        {
-            method = (InterpMethod)i;
-            break;
-        }
-    }
+    InterpMethod method = (InterpMethod)GetStringListIndex(interpMethodString.CString(), interpMethodNames, IM_LINEAR);
 
     SetInterpolationMethod(method);
     if (interpolationMethod_ == IM_SPLINE)
@@ -249,11 +235,12 @@ void ValueAnimation::SetValueType(VariantType valueType)
         (valueType_ == VAR_FLOAT) || (valueType_ == VAR_VECTOR2) || (valueType_ == VAR_VECTOR3) || (valueType_ == VAR_VECTOR4) ||
         (valueType_ == VAR_QUATERNION) || (valueType_ == VAR_COLOR);
 
-    if ((valueType_ == VAR_INTRECT) || (valueType_ == VAR_INTVECTOR2))
+    if ((valueType_ == VAR_INTRECT) || (valueType_ == VAR_INTVECTOR2) || (valueType_ == VAR_INTVECTOR3))
     {
         interpolatable_ = true;
-        // Force linear interpolation for IntRect and IntVector2
-        interpolationMethod_ = IM_LINEAR;
+        // Force linear interpolation for IntRect, IntVector2 and IntVector3
+        if (interpolationMethod_ == IM_SPLINE)
+            interpolationMethod_ = IM_LINEAR;
     }
 
     keyFrames_.Clear();
@@ -272,8 +259,8 @@ void ValueAnimation::SetInterpolationMethod(InterpMethod method)
     if (method == interpolationMethod_)
         return;
 
-    // Force linear interpolation for IntRect and IntVector2
-    if ((valueType_ == VAR_INTRECT) || (valueType_ == VAR_INTVECTOR2))
+    // Force linear interpolation for IntRect, IntVector2 and IntVector3
+    if (method == IM_SPLINE && (valueType_ == VAR_INTRECT || valueType_ == VAR_INTVECTOR2 || valueType_ == VAR_INTVECTOR3))
         method = IM_LINEAR;
 
     interpolationMethod_ = method;
@@ -341,15 +328,19 @@ void ValueAnimation::SetEventFrame(float time, const StringHash& eventType, cons
             }
         }
     }
+
+    beginTime_ = Min(time, beginTime_);
+    endTime_ = Max(time, endTime_);
 }
 
 bool ValueAnimation::IsValid() const
 {
-    return (interpolationMethod_ == IM_LINEAR && keyFrames_.Size() > 1) ||
+    return (interpolationMethod_ == IM_NONE) ||
+           (interpolationMethod_ == IM_LINEAR && keyFrames_.Size() > 1) ||
            (interpolationMethod_ == IM_SPLINE && keyFrames_.Size() > 2);
 }
 
-Variant ValueAnimation::GetAnimationValue(float scaledTime)
+Variant ValueAnimation::GetAnimationValue(float scaledTime) const
 {
     unsigned index = 1;
     for (; index < keyFrames_.Size(); ++index)
@@ -358,7 +349,7 @@ Variant ValueAnimation::GetAnimationValue(float scaledTime)
             break;
     }
 
-    if (index >= keyFrames_.Size() || !interpolatable_)
+    if (index >= keyFrames_.Size() || !interpolatable_ || interpolationMethod_ == IM_NONE)
         return keyFrames_[index - 1].value_;
     else
     {
@@ -428,6 +419,14 @@ Variant ValueAnimation::LinearInterpolation(unsigned index1, unsigned index2, fl
             return IntVector2((int)(v1.x_ * s + v2.x_ * t), (int)(v1.y_ * s + v2.y_ * t));
         }
 
+    case VAR_INTVECTOR3:
+        {
+            float s = 1.0f - t;
+            const IntVector3& v1 = value1.GetIntVector3();
+            const IntVector3& v2 = value2.GetIntVector3();
+            return IntVector3((int)(v1.x_ * s + v2.x_ * t), (int)(v1.y_ * s + v2.y_ * t), (int)(v1.z_ * s + v2.z_ * t));
+        }
+
     case VAR_DOUBLE:
         return value1.GetDouble() * (1.0f - t) + value2.GetDouble() * t;
 
@@ -437,7 +436,7 @@ Variant ValueAnimation::LinearInterpolation(unsigned index1, unsigned index2, fl
     }
 }
 
-Variant ValueAnimation::SplineInterpolation(unsigned index1, unsigned index2, float scaledTime)
+Variant ValueAnimation::SplineInterpolation(unsigned index1, unsigned index2, float scaledTime) const
 {
     if (splineTangentsDirty_)
         UpdateSplineTangents();
@@ -489,7 +488,7 @@ Variant ValueAnimation::SplineInterpolation(unsigned index1, unsigned index2, fl
     }
 }
 
-void ValueAnimation::UpdateSplineTangents()
+void ValueAnimation::UpdateSplineTangents() const
 {
     splineTangents_.Clear();
 
@@ -539,7 +538,7 @@ Variant ValueAnimation::SubstractAndMultiply(const Variant& value1, const Varian
         return (value1.GetDouble() - value2.GetDouble()) * t;
 
     default:
-        URHO3D_LOGERROR("Invalid value type for spline interpolation's substract and multiply operation");
+        URHO3D_LOGERROR("Invalid value type for spline interpolation's subtract and multiply operation");
         return Variant::EMPTY;
     }
 }

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -32,9 +32,8 @@
 #include "../LuaScript/LuaScript.h"
 #include "../LuaScript/LuaScriptEventInvoker.h"
 #include "../LuaScript/LuaScriptInstance.h"
-#ifdef URHO3D_PHYSICS
+#if defined(URHO3D_PHYSICS) || defined(URHO3D_URHO2D)
 #include "../Physics/PhysicsEvents.h"
-#include "../Physics/PhysicsWorld.h"
 #endif
 #include "../Resource/ResourceCache.h"
 #include "../Scene/Scene.h"
@@ -75,7 +74,7 @@ LuaScriptInstance::LuaScriptInstance(Context* context) :
     eventInvoker_ = new LuaScriptEventInvoker(this);
 
     for (int i = 0; i < MAX_LUA_SCRIPT_OBJECT_METHODS; ++i)
-        scriptObjectMethods_[i] = 0;
+        scriptObjectMethods_[i] = nullptr;
 }
 
 LuaScriptInstance::~LuaScriptInstance()
@@ -191,6 +190,13 @@ void LuaScriptInstance::OnSetAttribute(const AttributeInfo& attr, const Variant&
                 tolua_register_gc(luaState_, lua_gettop(luaState_));
             }
             break;
+        case VAR_INTVECTOR3:
+            {
+                IntVector3* value = new IntVector3(src.GetIntVector3());
+                tolua_pushusertype(luaState_, value, "IntVector3");
+                tolua_register_gc(luaState_, lua_gettop(luaState_));
+            }
+            break;
         default:
             URHO3D_LOGERROR("Unsupported data type");
             lua_settop(luaState_, top);
@@ -248,25 +254,28 @@ void LuaScriptInstance::OnGetAttribute(const AttributeInfo& attr, Variant& dest)
         dest = tolua_tourho3dstring(luaState_, -1, "");
         break;
     case VAR_VECTOR2:
-        dest = *((Vector2*)tolua_tousertype(luaState_, -1, 0));
+        dest = *((Vector2*)tolua_tousertype(luaState_, -1, nullptr));
         break;
     case VAR_VECTOR3:
-        dest = *((Vector3*)tolua_tousertype(luaState_, -1, 0));
+        dest = *((Vector3*)tolua_tousertype(luaState_, -1, nullptr));
         break;
     case VAR_VECTOR4:
-        dest = *((Vector4*)tolua_tousertype(luaState_, -1, 0));
+        dest = *((Vector4*)tolua_tousertype(luaState_, -1, nullptr));
         break;
     case VAR_QUATERNION:
-        dest = *((Quaternion*)tolua_tousertype(luaState_, -1, 0));
+        dest = *((Quaternion*)tolua_tousertype(luaState_, -1, nullptr));
         break;
     case VAR_COLOR:
-        dest = *((Color*)tolua_tousertype(luaState_, -1, 0));
+        dest = *((Color*)tolua_tousertype(luaState_, -1, nullptr));
         break;
     case VAR_INTRECT:
-        dest = *((IntRect*)tolua_tousertype(luaState_, -1, 0));
+        dest = *((IntRect*)tolua_tousertype(luaState_, -1, nullptr));
         break;
     case VAR_INTVECTOR2:
-        dest = *((IntVector2*)tolua_tousertype(luaState_, -1, 0));
+        dest = *((IntVector2*)tolua_tousertype(luaState_, -1, nullptr));
+        break;
+    case VAR_INTVECTOR3:
+        dest = *((IntVector3*)tolua_tousertype(luaState_, -1, nullptr));
         break;
     default:
         URHO3D_LOGERROR("Unsupported data type");
@@ -295,7 +304,7 @@ void LuaScriptInstance::AddEventHandler(const String& eventName, int functionInd
 {
     LuaFunction* function = luaScript_->GetFunction(functionIndex);
     if (function)
-        eventInvoker_->AddEventHandler(0, eventName, function);
+        eventInvoker_->AddEventHandler(nullptr, eventName, function);
 }
 
 void LuaScriptInstance::AddEventHandler(const String& eventName, const String& functionName)
@@ -303,7 +312,7 @@ void LuaScriptInstance::AddEventHandler(const String& eventName, const String& f
     String realFunctionName = functionName.Replaced(":", ".");
     LuaFunction* function = luaScript_->GetFunction(realFunctionName);
     if (function)
-        eventInvoker_->AddEventHandler(0, eventName, function);
+        eventInvoker_->AddEventHandler(nullptr, eventName, function);
 }
 
 void LuaScriptInstance::AddEventHandler(Object* sender, const String& eventName, int functionIndex)
@@ -362,9 +371,19 @@ void LuaScriptInstance::RemoveEventHandlersExcept(const Vector<String>& exceptio
     eventInvoker_->UnsubscribeFromAllEventsExcept(exceptionTypes, true);
 }
 
+bool LuaScriptInstance::HasEventHandler(const String& eventName) const
+{
+    return eventInvoker_->HasSubscribedToEvent(eventName);
+}
+
+bool LuaScriptInstance::HasEventHandler(Object* sender, const String& eventName) const
+{
+    return eventInvoker_->HasSubscribedToEvent(sender, eventName);
+}
+
 bool LuaScriptInstance::CreateObject(const String& scriptObjectType)
 {
-    SetScriptFile(0);
+    SetScriptFile(nullptr);
     SetScriptObjectType(scriptObjectType);
     return scriptObjectRef_ != LUA_REFNIL;
 }
@@ -573,10 +592,12 @@ void LuaScriptInstance::GetScriptAttributes()
                     info.type_ = VAR_QUATERNION;
                 else if (typeName == "Color")
                     info.type_ = VAR_COLOR;
-                else if (typeName == "Intrect")
+                else if (typeName == "IntRect")
                     info.type_ = VAR_INTRECT;
-                else if (typeName == "Intvector2")
+                else if (typeName == "IntVector2")
                     info.type_ = VAR_INTVECTOR2;
+                else if (typeName == "IntVector3")
+                    info.type_ = VAR_INTVECTOR3;
             }
             break;
         default:
@@ -608,14 +629,14 @@ void LuaScriptInstance::SubscribeToScriptMethodEvents()
     if (scene && scriptObjectMethods_[LSOM_POSTUPDATE])
         SubscribeToEvent(scene, E_SCENEPOSTUPDATE, URHO3D_HANDLER(LuaScriptInstance, HandlePostUpdate));
 
-#ifdef URHO3D_PHYSICS
-    PhysicsWorld* physicsWorld = scene ? scene->GetComponent<PhysicsWorld>() : 0;
+#if defined(URHO3D_PHYSICS) || defined(URHO3D_URHO2D)
+    Component* world = GetFixedUpdateSource();
 
-    if (physicsWorld && scriptObjectMethods_[LSOM_FIXEDUPDATE])
-        SubscribeToEvent(physicsWorld, E_PHYSICSPRESTEP, URHO3D_HANDLER(LuaScriptInstance, HandleFixedUpdate));
+    if (world && scriptObjectMethods_[LSOM_FIXEDUPDATE])
+        SubscribeToEvent(world, E_PHYSICSPRESTEP, URHO3D_HANDLER(LuaScriptInstance, HandleFixedUpdate));
 
-    if (physicsWorld && scriptObjectMethods_[LSOM_FIXEDPOSTUPDATE])
-        SubscribeToEvent(physicsWorld, E_PHYSICSPOSTSTEP, URHO3D_HANDLER(LuaScriptInstance, HandlePostFixedUpdate));
+    if (world && scriptObjectMethods_[LSOM_FIXEDPOSTUPDATE])
+        SubscribeToEvent(world, E_PHYSICSPOSTSTEP, URHO3D_HANDLER(LuaScriptInstance, HandlePostFixedUpdate));
 #endif
 
     if (node_ && scriptObjectMethods_[LSOM_TRANSFORMCHANGED])
@@ -627,7 +648,7 @@ void LuaScriptInstance::UnsubscribeFromScriptMethodEvents()
     UnsubscribeFromEvent(E_SCENEUPDATE);
     UnsubscribeFromEvent(E_SCENEPOSTUPDATE);
 
-#ifdef URHO3D_PHYSICS
+#if defined(URHO3D_PHYSICS) || defined(URHO3D_URHO2D)
     UnsubscribeFromEvent(E_PHYSICSPRESTEP);
     UnsubscribeFromEvent(E_PHYSICSPOSTSTEP);
 #endif
@@ -646,7 +667,7 @@ void LuaScriptInstance::HandleUpdate(StringHash eventType, VariantMap& eventData
     {
         if (scriptObjectMethods_[LSOM_DELAYEDSTART]->BeginCall(this))
             scriptObjectMethods_[LSOM_DELAYEDSTART]->EndCall();
-        scriptObjectMethods_[LSOM_DELAYEDSTART] = 0;  // Only execute once
+        scriptObjectMethods_[LSOM_DELAYEDSTART] = nullptr;  // Only execute once
     }
 
     LuaFunction* function = scriptObjectMethods_[LSOM_UPDATE];
@@ -670,10 +691,18 @@ void LuaScriptInstance::HandlePostUpdate(StringHash eventType, VariantMap& event
     }
 }
 
-#ifdef URHO3D_PHYSICS
+#if defined(URHO3D_PHYSICS) || defined(URHO3D_URHO2D)
 
 void LuaScriptInstance::HandleFixedUpdate(StringHash eventType, VariantMap& eventData)
 {
+    // Execute delayed start before first fixed update if not called yet
+    if (scriptObjectMethods_[LSOM_DELAYEDSTART])
+    {
+        if (scriptObjectMethods_[LSOM_DELAYEDSTART]->BeginCall(this))
+            scriptObjectMethods_[LSOM_DELAYEDSTART]->EndCall();
+        scriptObjectMethods_[LSOM_DELAYEDSTART] = nullptr;  // Only execute once
+    }
+
     using namespace PhysicsPreStep;
     float timeStep = eventData[P_TIMESTEP].GetFloat();
 
@@ -722,7 +751,7 @@ void LuaScriptInstance::ReleaseObject()
     }
 
     for (int i = 0; i < MAX_LUA_SCRIPT_OBJECT_METHODS; ++i)
-        scriptObjectMethods_[i] = 0;
+        scriptObjectMethods_[i] = nullptr;
 }
 
 LuaFunction* LuaScriptInstance::GetScriptObjectFunction(const String& functionName) const

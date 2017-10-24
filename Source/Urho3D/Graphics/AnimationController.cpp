@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,7 @@
 #include "../Graphics/Animation.h"
 #include "../Graphics/AnimationController.h"
 #include "../Graphics/AnimationState.h"
+#include "../IO/FileSystem.h"
 #include "../IO/Log.h"
 #include "../IO/MemoryBuffer.h"
 #include "../Resource/ResourceCache.h"
@@ -45,6 +46,7 @@ static const unsigned char CTRL_AUTOFADE = 0x4;
 static const unsigned char CTRL_SETTIME = 0x08;
 static const unsigned char CTRL_SETWEIGHT = 0x10;
 static const unsigned char CTRL_REMOVEONCOMPLETION = 0x20;
+static const unsigned char CTRL_ADDITIVE = 0x40;
 static const float EXTRA_ANIM_FADEOUT_TIME = 0.1f;
 static const float COMMAND_STAY_TIME = 0.25f;
 static const unsigned MAX_NODE_ANIMATION_STATES = 256;
@@ -196,8 +198,13 @@ bool AnimationController::Play(const String& name, unsigned char layer, bool loo
 
 bool AnimationController::PlayExclusive(const String& name, unsigned char layer, bool looped, float fadeTime)
 {
-    FadeOthers(name, 0.0f, fadeTime);
-    return Play(name, layer, looped, fadeTime);
+    bool success = Play(name, layer, looped, fadeTime);
+    
+    // Fade other animations only if successfully started the new one
+    if (success)
+        FadeOthers(name, 0.0f, fadeTime);
+    
+    return success;
 }
 
 bool AnimationController::Stop(const String& name, float fadeOutTime)
@@ -212,7 +219,7 @@ bool AnimationController::Stop(const String& name, float fadeOutTime)
         MarkNetworkUpdate();
     }
 
-    return index != M_MAX_UNSIGNED || state != 0;
+    return index != M_MAX_UNSIGNED || state != nullptr;
 }
 
 void AnimationController::StopLayer(unsigned char layer, float fadeOutTime)
@@ -365,6 +372,10 @@ bool AnimationController::SetWeight(const String& name, float weight)
     animations_[index].setWeight_ = (unsigned char)(weight * 255.0f);
     animations_[index].setWeightTtl_ = COMMAND_STAY_TIME;
     ++animations_[index].setWeightRev_;
+    // Cancel any ongoing weight fade
+    animations_[index].targetWeight_ = weight;
+    animations_[index].fadeTime_ = 0.0f;
+
     MarkNetworkUpdate();
     return true;
 }
@@ -393,6 +404,17 @@ bool AnimationController::SetLooped(const String& name, bool enable)
     return true;
 }
 
+bool AnimationController::SetBlendMode(const String& name, AnimationBlendMode mode)
+{
+    AnimationState* state = GetAnimationState(name);
+    if (!state)
+        return false;
+
+    state->SetBlendMode(mode);
+    MarkNetworkUpdate();
+    return true;
+}
+
 bool AnimationController::SetAutoFade(const String& name, float fadeOutTime)
 {
     unsigned index;
@@ -412,6 +434,18 @@ bool AnimationController::IsPlaying(const String& name) const
     AnimationState* state;
     FindAnimation(name, index, state);
     return index != M_MAX_UNSIGNED;
+}
+
+bool AnimationController::IsPlaying(unsigned char layer) const
+{
+    for (Vector<AnimationControl>::ConstIterator i = animations_.Begin(); i != animations_.End(); ++i)
+    {
+        AnimationState* state = GetAnimationState(i->hash_);
+        if (state && state->GetLayer() == layer)
+            return true;
+    }
+
+    return false;
 }
 
 bool AnimationController::IsFadingIn(const String& name) const
@@ -457,7 +491,7 @@ unsigned char AnimationController::GetLayer(const String& name) const
 Bone* AnimationController::GetStartBone(const String& name) const
 {
     AnimationState* state = GetAnimationState(name);
-    return state ? state->GetStartBone() : 0;
+    return state ? state->GetStartBone() : nullptr;
 }
 
 const String& AnimationController::GetStartBoneName(const String& name) const
@@ -482,6 +516,12 @@ bool AnimationController::IsLooped(const String& name) const
 {
     AnimationState* state = GetAnimationState(name);
     return state ? state->IsLooped() : false;
+}
+
+AnimationBlendMode AnimationController::GetBlendMode(const String& name) const
+{
+    AnimationState* state = GetAnimationState(name);
+    return state ? state->GetBlendMode() : ABM_LERP;
 }
 
 float AnimationController::GetLength(const String& name) const
@@ -550,7 +590,7 @@ AnimationState* AnimationController::GetAnimationState(StringHash nameHash) cons
             return *i;
     }
 
-    return 0;
+    return nullptr;
 }
 
 void AnimationController::SetAnimationsAttr(const VariantVector& value)
@@ -617,6 +657,7 @@ void AnimationController::SetNetAnimationsAttr(const PODVector<unsigned char>& v
         unsigned char ctrl = buf.ReadUByte();
         state->SetLayer(buf.ReadUByte());
         state->SetLooped((ctrl & CTRL_LOOPED) != 0);
+        state->SetBlendMode((ctrl & CTRL_ADDITIVE) != 0 ? ABM_ADDITIVE : ABM_LERP);
         animations_[index].speed_ = (float)buf.ReadShort() / 2048.0f; // 11 bits of decimal precision, max. 16x playback speed
         animations_[index].targetWeight_ = (float)buf.ReadUByte() / 255.0f; // 8 bits of decimal precision
         animations_[index].fadeTime_ = (float)buf.ReadUByte() / 64.0f; // 6 bits of decimal precision, max. 4 seconds fade
@@ -627,7 +668,7 @@ void AnimationController::SetNetAnimationsAttr(const PODVector<unsigned char>& v
                 state->SetStartBone(model->GetSkeleton().GetBone(boneHash));
         }
         else
-            state->SetStartBone(0);
+            state->SetStartBone(nullptr);
         if (ctrl & CTRL_AUTOFADE)
             animations_[index].autoFadeTime_ = (float)buf.ReadUByte() / 64.0f; // 6 bits of decimal precision, max. 4 seconds fade
         else
@@ -698,7 +739,7 @@ void AnimationController::SetNodeAnimationStatesAttr(const VariantVector& value)
         else
         {
             // If not enough data, just add an empty animation state
-            SharedPtr<AnimationState> newState(new AnimationState(GetNode(), 0));
+            SharedPtr<AnimationState> newState(new AnimationState(GetNode(), nullptr));
             nodeAnimationStates_.Push(newState);
         }
     }
@@ -743,6 +784,8 @@ const PODVector<unsigned char>& AnimationController::GetNetAnimationsAttr() cons
         Bone* startBone = state->GetStartBone();
         if (state->IsLooped())
             ctrl |= CTRL_LOOPED;
+        if (state->GetBlendMode() == ABM_ADDITIVE)
+            ctrl |= CTRL_ADDITIVE;
         if (startBone && model && startBone != model->GetSkeleton().GetRootBone())
             ctrl |= CTRL_STARTBONE;
         if (i->autoFadeTime_ > 0.0f)
@@ -806,7 +849,7 @@ void AnimationController::OnSceneSet(Scene* scene)
 AnimationState* AnimationController::AddAnimationState(Animation* animation)
 {
     if (!animation)
-        return 0;
+        return nullptr;
 
     // Model mode
     AnimatedModel* model = GetComponent<AnimatedModel>();
@@ -845,7 +888,7 @@ void AnimationController::RemoveAnimationState(AnimationState* state)
 
 void AnimationController::FindAnimation(const String& name, unsigned& index, AnimationState*& state) const
 {
-    StringHash nameHash(name);
+    StringHash nameHash(GetInternalPath(name));
 
     // Find the AnimationState
     state = GetAnimationState(nameHash);

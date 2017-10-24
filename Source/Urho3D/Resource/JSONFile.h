@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -37,16 +37,19 @@ public:
     /// Construct.
     JSONFile(Context* context);
     /// Destruct.
-    virtual ~JSONFile();
+    virtual ~JSONFile() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Load resource from stream. May be called from a worker thread. Return true if successful.
-    virtual bool BeginLoad(Deserializer& source);
+    virtual bool BeginLoad(Deserializer& source) override;
     /// Save resource with default indentation (one tab). Return true if successful.
-    virtual bool Save(Serializer& dest) const;
+    virtual bool Save(Serializer& dest) const override;
     /// Save resource with user-defined indentation, only the first character (if any) of the string is used and the length of the string defines the character count. Return true if successful.
     bool Save(Serializer& dest, const String& indendation) const;
+    
+    /// Deserialize from a string. Return true if successful.
+    bool FromString(const String& source);
 
     /// Return root value.
     JSONValue& GetRoot() { return root_; }

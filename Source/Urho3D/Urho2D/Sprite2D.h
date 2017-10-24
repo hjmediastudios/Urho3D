@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -39,14 +39,14 @@ public:
     /// Construct.
     Sprite2D(Context* context);
     /// Destruct.
-    virtual ~Sprite2D();
+    virtual ~Sprite2D() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Load resource from stream. May be called from a worker thread. Return true if successful.
-    virtual bool BeginLoad(Deserializer& source);
+    virtual bool BeginLoad(Deserializer& source) override;
     /// Finish resource loading. Always called from the main thread. Return true if successful.
-    virtual bool EndLoad();
+    virtual bool EndLoad() override;
 
     /// Set texture.
     void SetTexture(Texture2D* texture);
@@ -56,6 +56,8 @@ public:
     void SetHotSpot(const Vector2& hotSpot);
     /// Set offset.
     void SetOffset(const IntVector2& offset);
+    /// Set texture edge offset in pixels. This affects the left/right and top/bottom edges equally to prevent edge sampling artifacts. Default 0.
+    void SetTextureEdgeOffset(float offset);
     /// Set sprite sheet.
     void SetSpriteSheet(SpriteSheet2D* spriteSheet);
 
@@ -71,8 +73,12 @@ public:
     /// Return offset.
     const IntVector2& GetOffset() const { return offset_; }
 
+    /// Return texture edge offset.
+    float GetTextureEdgeOffset() const { return edgeOffset_; }
+
     /// Return sprite sheet.
     SpriteSheet2D* GetSpriteSheet() const { return spriteSheet_; }
+
 
     /// Return draw rectangle.
     bool GetDrawRectangle(Rect& rect, bool flipX = false, bool flipY = false) const;
@@ -99,6 +105,8 @@ private:
     WeakPtr<SpriteSheet2D> spriteSheet_;
     /// Texture used while loading.
     SharedPtr<Texture2D> loadTexture_;
+    /// Offset to fix texture edge bleeding.
+    float edgeOffset_;
 };
 
 }

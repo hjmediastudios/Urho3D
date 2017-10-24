@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -97,6 +97,8 @@ struct URHO3D_API SourceBatch
     const Matrix3x4* worldTransform_;
     /// Number of world transforms.
     unsigned numWorldTransforms_;
+    /// Per-instance data. If not null, must contain enough data to fill instancing buffer.
+    void* instancingData_;
     /// %Geometry type.
     GeometryType geometryType_;
 };
@@ -114,20 +116,20 @@ public:
     /// Construct.
     Drawable(Context* context, unsigned char drawableFlags);
     /// Destruct.
-    virtual ~Drawable();
+    virtual ~Drawable() override;
     /// Register object attributes. Drawable must be registered first.
     static void RegisterObject(Context* context);
 
     /// Handle enabled/disabled state change.
-    virtual void OnSetEnabled();
+    virtual void OnSetEnabled() override;
     /// Process octree raycast. May be called from a worker thread.
     virtual void ProcessRayQuery(const RayOctreeQuery& query, PODVector<RayQueryResult>& results);
-    /// Update before octree reinsertion. Is called from a worker thread.
-    virtual void Update(const FrameInfo& frame);
+    /// Update before octree reinsertion. Is called from a worker thread
+    virtual void Update(const FrameInfo& frame) { }
     /// Calculate distance and prepare batches for rendering. May be called from worker thread(s), possibly re-entrantly.
     virtual void UpdateBatches(const FrameInfo& frame);
     /// Prepare geometry for rendering.
-    virtual void UpdateGeometry(const FrameInfo& frame);
+    virtual void UpdateGeometry(const FrameInfo& frame) { }
 
     /// Return whether a geometry update is necessary, and if it can happen in a worker thread.
     virtual UpdateGeometryType GetUpdateGeometryType() { return UPDATE_NONE; }
@@ -141,7 +143,7 @@ public:
     /// Draw to occlusion buffer. Return true if did not run out of triangles.
     virtual bool DrawOcclusion(OcclusionBuffer* buffer);
     /// Visualize the component as debug geometry.
-    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest);
+    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest) override;
 
     /// Set draw distance.
     void SetDrawDistance(float distance);
@@ -281,19 +283,19 @@ public:
     /// Return the maximum view-space depth.
     float GetMaxZ() const { return maxZ_; }
 
-    // Add a per-pixel light affecting the object this frame.
+    /// Add a per-pixel light affecting the object this frame.
     void AddLight(Light* light)
     {
         if (!firstLight_)
             firstLight_ = light;
 
-        // Need to store into the light list only if the per-pixel lights are being limited.
+        // Need to store into the light list only if the per-pixel lights are being limited
         // Otherwise recording the first light is enough
         if (maxLights_)
             lights_.Push(light);
     }
 
-    // Add a per-vertex light affecting the object this frame.
+    /// Add a per-vertex light affecting the object this frame.
     void AddVertexLight(Light* light)
     {
         vertexLights_.Push(light);
@@ -301,11 +303,11 @@ public:
 
 protected:
     /// Handle node being assigned.
-    virtual void OnNodeSet(Node* node);
+    virtual void OnNodeSet(Node* node) override;
     /// Handle scene being assigned.
-    virtual void OnSceneSet(Scene* scene);
+    virtual void OnSceneSet(Scene* scene) override;
     /// Handle node transform being dirtied.
-    virtual void OnMarkedDirty(Node* node);
+    virtual void OnMarkedDirty(Node* node) override;
     /// Recalculate the world-space bounding box.
     virtual void OnWorldBoundingBoxUpdate() = 0;
 

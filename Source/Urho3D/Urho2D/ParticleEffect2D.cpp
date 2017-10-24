@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -43,7 +43,9 @@ static const int srcBlendFuncs[] =
     0x0302, // GL_SRC_ALPHA
     0x0302, // GL_SRC_ALPHA
     1,      // GL_ONE
-    0x0305  // GL_ONE_MINUS_DST_ALPHA
+    0x0305, // GL_ONE_MINUS_DST_ALPHA
+    1,      // GL_ONE
+    0x0302  // GL_SRC_ALPHA
 };
 
 static const int destBlendFuncs[] =
@@ -54,8 +56,14 @@ static const int destBlendFuncs[] =
     0x0303, // GL_ONE_MINUS_SRC_ALPHA
     1,      // GL_ONE
     0x0303, // GL_ONE_MINUS_SRC_ALPHA
-    0x0304  // GL_DST_ALPHA
+    0x0304, // GL_DST_ALPHA
+    1,      // GL_ONE
+    1       // GL_ONE
 };
+
+// Make sure that there are are as many blend functions as we have blend modes.
+static_assert(sizeof(srcBlendFuncs) / sizeof(srcBlendFuncs[0]) == MAX_BLENDMODES, "");
+static_assert(sizeof(destBlendFuncs) / sizeof(destBlendFuncs[0]) == MAX_BLENDMODES, "");
 
 ParticleEffect2D::ParticleEffect2D(Context* context) :
     Resource(context),
@@ -79,7 +87,7 @@ ParticleEffect2D::ParticleEffect2D(Context* context) :
     startParticleSize_(60.0f),
     startParticleSizeVariance_(40.0f),
     finishParticleSize_(5.0f),
-    FinishParticleSizeVariance_(5.0f),
+    finishParticleSizeVariance_(5.0f),
     duration_(-1.0f),
     emitterType_(EMITTER_TYPE_GRAVITY),
     maxRadius_(100.0f),
@@ -158,7 +166,7 @@ bool ParticleEffect2D::BeginLoad(Deserializer& source)
 
     finishParticleSize_ = ReadFloat(rootElem, "finishParticleSize");
     // Typo in pex file
-    FinishParticleSizeVariance_ = ReadFloat(rootElem, "FinishParticleSizeVariance");
+    finishParticleSizeVariance_ = ReadFloat(rootElem, "FinishParticleSizeVariance");
 
     duration_ = M_INFINITY;
     if (rootElem.HasChild("duration"))
@@ -262,7 +270,7 @@ bool ParticleEffect2D::Save(Serializer& dest) const
 
     WriteFloat(rootElem, "finishParticleSize", finishParticleSize_);
     // Typo in pex file
-    WriteFloat(rootElem, "FinishParticleSizeVariance", FinishParticleSizeVariance_);
+    WriteFloat(rootElem, "FinishParticleSizeVariance", finishParticleSizeVariance_);
 
     float duration = duration_;
     if (duration == M_INFINITY)
@@ -395,9 +403,9 @@ void ParticleEffect2D::SetFinishParticleSize(float finishParticleSize)
     finishParticleSize_ = finishParticleSize;
 }
 
-void ParticleEffect2D::SetFinishParticleSizeVariance(float FinishParticleSizeVariance)
+void ParticleEffect2D::SetFinishParticleSizeVariance(float finishParticleSizeVariance)
 {
-    FinishParticleSizeVariance_ = FinishParticleSizeVariance;
+    finishParticleSizeVariance_ = finishParticleSizeVariance;
 }
 
 void ParticleEffect2D::SetDuration(float duration)
@@ -463,6 +471,52 @@ void ParticleEffect2D::SetRotationEnd(float rotationEnd)
 void ParticleEffect2D::SetRotationEndVariance(float rotationEndVariance)
 {
     rotationEndVariance_ = rotationEndVariance;
+}
+
+SharedPtr<ParticleEffect2D> ParticleEffect2D::Clone(const String& cloneName) const
+{
+    SharedPtr<ParticleEffect2D> ret(new ParticleEffect2D(context_));
+
+    ret->SetName(cloneName);
+    ret->sprite_ = sprite_;
+    ret->sourcePositionVariance_ = sourcePositionVariance_;
+    ret->speed_ = speed_;
+    ret->speedVariance_ = speedVariance_;
+    ret->particleLifeSpan_ = particleLifeSpan_;
+    ret->particleLifespanVariance_ = particleLifespanVariance_;
+    ret->angle_ = angle_;
+    ret->angleVariance_ = angleVariance_;
+    ret->gravity_ = gravity_;
+    ret->radialAcceleration_ = radialAcceleration_;
+    ret->tangentialAcceleration_ = tangentialAcceleration_;
+    ret->radialAccelVariance_ = radialAccelVariance_;
+    ret->tangentialAccelVariance_ = tangentialAccelVariance_;
+    ret->startColor_ = startColor_;
+    ret->startColorVariance_ = startColorVariance_;
+    ret->finishColor_ = finishColor_;
+    ret->finishColorVariance_ = finishColorVariance_;
+    ret->maxParticles_ = maxParticles_;
+    ret->startParticleSize_ = startParticleSize_;
+    ret->startParticleSizeVariance_ = startParticleSizeVariance_;
+    ret->finishParticleSize_ = finishParticleSize_;
+    ret->finishParticleSizeVariance_ = finishParticleSizeVariance_;
+    ret->duration_ = duration_;
+    ret->emitterType_ = emitterType_;
+    ret->maxRadius_ = maxRadius_;
+    ret->maxRadiusVariance_ = maxRadiusVariance_;
+    ret->minRadius_ = minRadius_;
+    ret->minRadiusVariance_ = minRadiusVariance_;
+    ret->rotatePerSecond_ = rotatePerSecond_;
+    ret->rotatePerSecondVariance_ = rotatePerSecondVariance_;
+    ret->blendMode_ = blendMode_;
+    ret->rotationStart_ = rotationStart_;
+    ret->rotationStartVariance_ = rotationStartVariance_;
+    ret->rotationEnd_ = rotationEnd_;
+    ret->rotationEndVariance_ = rotationEndVariance_;
+    /// \todo Zero if source was created programmatically
+    ret->SetMemoryUse(GetMemoryUse());
+    
+    return ret;
 }
 
 int ParticleEffect2D::ReadInt(const XMLElement& element, const String& name) const

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -81,12 +81,12 @@ public:
     /// Construct.
     ParticleEmitter2D(Context* context);
     /// Destruct.
-    ~ParticleEmitter2D();
+    virtual ~ParticleEmitter2D() override;
     /// Register object factory. drawable2d must be registered first.
     static void RegisterObject(Context* context);
 
     /// Handle enabled/disabled state change.
-    virtual void OnSetEnabled();
+    virtual void OnSetEnabled() override;
 
     /// Set particle effect.
     void SetEffect(ParticleEffect2D* effect);
@@ -96,6 +96,8 @@ public:
     void SetBlendMode(BlendMode blendMode);
     /// Set max particles.
     void SetMaxParticles(unsigned maxParticles);
+    /// Set whether should be emitting. If the state was changed, also resets the emission period timer.
+    void SetEmitting(bool enable);
 
     /// Return particle effect.
     ParticleEffect2D* GetEffect() const;
@@ -116,16 +118,18 @@ public:
     void SetSpriteAttr(const ResourceRef& value);
     /// Return sprite attribute.
     ResourceRef GetSpriteAttr() const;
+    /// Return whether is currently emitting.
+    bool IsEmitting() const { return emitting_; }
 
 private:
     /// Handle scene being assigned.
-    virtual void OnSceneSet(Scene* scene);
+    virtual void OnSceneSet(Scene* scene) override;
     /// Recalculate the world-space bounding box.
-    virtual void OnWorldBoundingBoxUpdate();
+    virtual void OnWorldBoundingBoxUpdate() override;
     /// Handle draw order changed.
-    virtual void OnDrawOrderChanged();
+    virtual void OnDrawOrderChanged() override;
     /// Update source batches.
-    virtual void UpdateSourceBatches();
+    virtual void UpdateSourceBatches() override;
     /// Update material.
     void UpdateMaterial();
     /// Handle scene post update.
@@ -143,12 +147,14 @@ private:
     SharedPtr<Sprite2D> sprite_;
     /// Blend mode.
     BlendMode blendMode_;
-    /// Num particles.
-    int numParticles_;
+    /// Nummber of particles.
+    unsigned numParticles_;
     /// Emission time.
     float emissionTime_;
     /// Emit particle time
     float emitParticleTime_;
+    /// Currently emitting flag.
+    bool emitting_;
     /// Particles.
     Vector<Particle2D> particles_;
     /// Bounding box min point.

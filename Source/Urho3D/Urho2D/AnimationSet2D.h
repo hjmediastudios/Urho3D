@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -51,14 +51,14 @@ public:
     /// Construct.
     AnimationSet2D(Context* context);
     /// Destruct.
-    virtual ~AnimationSet2D();
+    virtual ~AnimationSet2D() override;
     /// Register object factory. 
     static void RegisterObject(Context* context);
 
     /// Load resource from stream. May be called from a worker thread. Return true if successful.
-    virtual bool BeginLoad(Deserializer& source);
+    virtual bool BeginLoad(Deserializer& source) override;
     /// Finish resource loading. Always called from the main thread. Return true if successful.
-    virtual bool EndLoad();
+    virtual bool EndLoad() override;
 
     /// Get number of animations.
     unsigned GetNumAnimations() const;
@@ -76,7 +76,7 @@ public:
 #endif
 
     /// Return spriter data.
-    Spriter::SpriterData* GetSpriterData() const { return spriterData_; }
+    Spriter::SpriterData* GetSpriterData() const { return spriterData_.Get(); }
     /// Return spriter file sprite.
     Sprite2D* GetSpriterFileSprite(int folderId, int fileId) const;
 
@@ -109,7 +109,7 @@ private:
 #endif
     
     /// Spriter data.
-    Spriter::SpriterData* spriterData_;
+    UniquePtr<Spriter::SpriterData> spriterData_;
     /// Has sprite sheet.
     bool hasSpriteSheet_;
     /// Sprite sheet file path.

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -31,6 +31,8 @@
 
 #include "../DebugNew.h"
 
+#include <SDL/SDL.h>
+
 namespace Urho3D
 {
 
@@ -40,7 +42,7 @@ extern const char* UI_CATEGORY;
 
 LineEdit::LineEdit(Context* context) :
     BorderImage(context),
-    lastFont_(0),
+    lastFont_(nullptr),
     lastFontSize_(0),
     cursorPosition_(0),
     dragBeginCursor_(M_MAX_UNSIGNED),
@@ -211,8 +213,8 @@ void LineEdit::OnKey(int key, int buttons, int qualifiers)
 
     switch (key)
     {
-    case 'X':
-    case 'C':
+    case KEY_X:
+    case KEY_C:
         if (textCopyable_ && qualifiers & QUAL_CTRL)
         {
             unsigned start = text_->GetSelectionStart();
@@ -221,7 +223,7 @@ void LineEdit::OnKey(int key, int buttons, int qualifiers)
             if (text_->GetSelectionLength())
                 GetSubsystem<UI>()->SetClipboardText(line_.SubstringUTF8(start, length));
 
-            if (key == 'X' && editable_)
+            if (key == KEY_X && editable_)
             {
                 if (start + length < line_.LengthUTF8())
                     line_ = line_.SubstringUTF8(0, start) + line_.SubstringUTF8(start + length);
@@ -234,7 +236,7 @@ void LineEdit::OnKey(int key, int buttons, int qualifiers)
         }
         break;
 
-    case 'V':
+    case KEY_V:
         if (editable_ && textCopyable_ && qualifiers & QUAL_CTRL)
         {
             const String& clipBoard = GetSubsystem<UI>()->GetClipboardText();
@@ -429,25 +431,19 @@ void LineEdit::OnKey(int key, int buttons, int qualifiers)
         UpdateCursor();
 }
 
-void LineEdit::OnTextInput(const String& text, int buttons, int qualifiers)
+void LineEdit::OnTextInput(const String& text)
 {
     if (!editable_)
         return;
 
     bool changed = false;
 
-    // If only CTRL is held down, do not edit
-    if ((qualifiers & (QUAL_CTRL | QUAL_ALT)) == QUAL_CTRL)
-        return;
-
-    // Send char as an event to allow changing it
-    using namespace CharEntry;
+    // Send text entry as an event to allow changing it
+    using namespace TextEntry;
 
     VariantMap& eventData = GetEventDataMap();
     eventData[P_ELEMENT] = this;
     eventData[P_TEXT] = text;
-    eventData[P_BUTTONS] = buttons;
-    eventData[P_QUALIFIERS] = qualifiers;
     SendEvent(E_TEXTENTRY, eventData);
 
     const String newText = eventData[P_TEXT].GetString().SubstringUTF8(0);
@@ -603,6 +599,10 @@ void LineEdit::UpdateCursor()
     cursor_->SetPosition(text_->GetPosition() + IntVector2(x, 0));
     cursor_->SetSize(cursor_->GetWidth(), text_->GetRowHeight());
 
+    IntVector2 screenPosition = ElementToScreen(cursor_->GetPosition());
+    SDL_Rect rect = {screenPosition.x_, screenPosition.y_, cursor_->GetSize().x_, cursor_->GetSize().y_};
+    SDL_SetTextInputRect(&rect);
+
     // Scroll if necessary
     int sx = -GetChildOffset().x_;
     int left = clipBorder_.left_;
@@ -636,7 +636,7 @@ unsigned LineEdit::GetCharIndex(const IntVector2& position)
     return M_MAX_UNSIGNED;
 }
 
-void LineEdit::HandleFocused(StringHash eventType, VariantMap& eventData)
+void LineEdit::HandleFocused(StringHash /*eventType*/, VariantMap& eventData)
 {
     if (eventData[Focused::P_BYKEY].GetBool())
     {
@@ -649,7 +649,7 @@ void LineEdit::HandleFocused(StringHash eventType, VariantMap& eventData)
         GetSubsystem<Input>()->SetScreenKeyboardVisible(true);
 }
 
-void LineEdit::HandleDefocused(StringHash eventType, VariantMap& eventData)
+void LineEdit::HandleDefocused(StringHash /*eventType*/, VariantMap& /*eventData*/)
 {
     text_->ClearSelection();
 
@@ -657,7 +657,7 @@ void LineEdit::HandleDefocused(StringHash eventType, VariantMap& eventData)
         GetSubsystem<Input>()->SetScreenKeyboardVisible(false);
 }
 
-void LineEdit::HandleLayoutUpdated(StringHash eventType, VariantMap& eventData)
+void LineEdit::HandleLayoutUpdated(StringHash /*eventType*/, VariantMap& /*eventData*/)
 {
     UpdateCursor();
 }

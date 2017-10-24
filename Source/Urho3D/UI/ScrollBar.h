@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -31,24 +31,24 @@ class Button;
 class Slider;
 
 /// Scroll bar %UI element with forward and back buttons.
-class URHO3D_API ScrollBar : public UIElement
+class URHO3D_API ScrollBar : public BorderImage
 {
-    URHO3D_OBJECT(ScrollBar, UIElement);
+    URHO3D_OBJECT(ScrollBar, BorderImage);
 
 public:
     /// Construct.
     ScrollBar(Context* context);
     /// Destruct.
-    virtual ~ScrollBar();
+    virtual ~ScrollBar() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Apply attribute changes that can not be applied immediately.
-    virtual void ApplyAttributes();
+    virtual void ApplyAttributes() override;
     /// React to resize.
-    virtual void OnResize();
+    virtual void OnResize(const IntVector2& newSize, const IntVector2& delta) override;
     /// React to editable status change.
-    virtual void OnSetEditable();
+    virtual void OnSetEditable() override;
 
     /// Set orientation type.
     void SetOrientation(Orientation orientation);

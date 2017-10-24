@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,7 @@
 #pragma once
 
 #include "../Container/ListBase.h"
+#include <initializer_list>
 
 namespace Urho3D
 {
@@ -185,7 +186,14 @@ public:
         head_ = tail_ = ReserveNode();
         *this = list;
     }
-
+    /// Aggregate initialization constructor.
+    List(const std::initializer_list<T>& list) : List()
+    {
+        for (auto it = list.begin(); it != list.end(); it++)
+        {
+            Push(*it);
+        }
+    }
     /// Destruct.
     ~List()
     {
@@ -197,9 +205,12 @@ public:
     /// Assign from another list.
     List& operator =(const List<T>& rhs)
     {
-        // Clear, then insert the nodes of the other list
-        Clear();
-        Insert(End(), rhs);
+        // Clear, then insert the nodes of the other list. In case of self-assignment do nothing
+        if (&rhs != this)
+        {
+            Clear();
+            Insert(End(), rhs);
+        }
         return *this;
     }
 
@@ -473,11 +484,6 @@ private:
         AllocatorFree(allocator_, node);
     }
 };
-
-}
-
-namespace std
-{
 
 template <class T> typename Urho3D::List<T>::ConstIterator begin(const Urho3D::List<T>& v) { return v.Begin(); }
 

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -55,6 +55,7 @@ URHO3D_DEFINE_APPLICATION_MAIN(CrowdNavigation)
 
 CrowdNavigation::CrowdNavigation(Context* context) :
     Sample(context),
+    streamingDistance_(2),
     drawDebug_(false)
 {
 }
@@ -75,6 +76,9 @@ void CrowdNavigation::Start()
 
     // Hook up to the frame update and render post-update events
     SubscribeToEvents();
+
+    // Set the mouse mode to use in the sample
+    Sample::InitMouseMode(MM_ABSOLUTE);
 }
 
 void CrowdNavigation::CreateScene()
@@ -132,6 +136,8 @@ void CrowdNavigation::CreateScene()
 
     // Create a DynamicNavigationMesh component to the scene root
     DynamicNavigationMesh* navMesh = scene_->CreateComponent<DynamicNavigationMesh>();
+    // Set small tiles to show navigation mesh streaming
+    navMesh->SetTileSize(32);
     // Enable drawing debug geometry for obstacles and off-mesh connections
     navMesh->SetDrawObstacles(true);
     navMesh->SetDrawOffMeshConnections(true);
@@ -210,6 +216,7 @@ void CrowdNavigation::CreateUI()
         "LMB to set destination, SHIFT+LMB to spawn a Jack\n"
         "MMB or O key to add obstacles or remove obstacles/agents\n"
         "F5 to save scene, F7 to load\n"
+        "Tab to toggle navigation mesh streaming\n"
         "Space to toggle debug geometry\n"
         "F12 to toggle this instruction text"
     );
@@ -266,7 +273,7 @@ void CrowdNavigation::SpawnJack(const Vector3& pos, Node* jackGroup)
     CrowdAgent* agent = jackNode->CreateComponent<CrowdAgent>();
     agent->SetHeight(2.0f);
     agent->SetMaxSpeed(3.0f);
-    agent->SetMaxAccel(3.0f);
+    agent->SetMaxAccel(5.0f);
 }
 
 void CrowdNavigation::CreateMushroom(const Vector3& pos)
@@ -374,7 +381,7 @@ void CrowdNavigation::AddOrRemoveObject()
 
 bool CrowdNavigation::Raycast(float maxDistance, Vector3& hitPos, Drawable*& hitDrawable)
 {
-    hitDrawable = 0;
+    hitDrawable = nullptr;
 
     UI* ui = GetSubsystem<UI>();
     IntVector2 pos = ui->GetCursorPosition();
@@ -430,20 +437,20 @@ void CrowdNavigation::MoveCamera(float timeStep)
     }
 
     // Read WASD keys and move the camera scene node to the corresponding direction if they are pressed
-    if (input->GetKeyDown('W'))
+    if (input->GetKeyDown(KEY_W))
         cameraNode_->Translate(Vector3::FORWARD * MOVE_SPEED * timeStep);
-    if (input->GetKeyDown('S'))
+    if (input->GetKeyDown(KEY_S))
         cameraNode_->Translate(Vector3::BACK * MOVE_SPEED * timeStep);
-    if (input->GetKeyDown('A'))
+    if (input->GetKeyDown(KEY_A))
         cameraNode_->Translate(Vector3::LEFT * MOVE_SPEED * timeStep);
-    if (input->GetKeyDown('D'))
+    if (input->GetKeyDown(KEY_D))
         cameraNode_->Translate(Vector3::RIGHT * MOVE_SPEED * timeStep);
 
     // Set destination or spawn a new jack with left mouse button
     if (input->GetMouseButtonPress(MOUSEB_LEFT))
         SetPathPoint(input->GetQualifierDown(QUAL_SHIFT));
     // Add new obstacle or remove existing obstacle/agent with middle mouse button
-    else if (input->GetMouseButtonPress(MOUSEB_MIDDLE) || input->GetKeyPress('O'))
+    else if (input->GetMouseButtonPress(MOUSEB_MIDDLE) || input->GetKeyPress(KEY_O))
         AddOrRemoveObject();
 
     // Check for loading/saving the scene from/to the file Data/Scenes/CrowdNavigation.xml relative to the executable directory
@@ -470,6 +477,79 @@ void CrowdNavigation::MoveCamera(float timeStep)
     }
 }
 
+void CrowdNavigation::ToggleStreaming(bool enabled)
+{
+    DynamicNavigationMesh* navMesh = scene_->GetComponent<DynamicNavigationMesh>();
+    if (enabled)
+    {
+        int maxTiles = (2 * streamingDistance_ + 1) * (2 * streamingDistance_ + 1);
+        BoundingBox boundingBox = navMesh->GetBoundingBox();
+        SaveNavigationData();
+        navMesh->Allocate(boundingBox, maxTiles);
+    }
+    else
+        navMesh->Build();
+}
+
+void CrowdNavigation::UpdateStreaming()
+{
+    // Center the navigation mesh at the crowd of jacks
+    Vector3 averageJackPosition;
+    if (Node* jackGroup = scene_->GetChild("Jacks"))
+    {
+        const unsigned numJacks = jackGroup->GetNumChildren();
+        for (unsigned i = 0; i < numJacks; ++i)
+            averageJackPosition += jackGroup->GetChild(i)->GetWorldPosition();
+        averageJackPosition /= (float)numJacks;
+    }
+
+    // Compute currently loaded area
+    DynamicNavigationMesh* navMesh = scene_->GetComponent<DynamicNavigationMesh>();
+    const IntVector2 jackTile = navMesh->GetTileIndex(averageJackPosition);
+    const IntVector2 numTiles = navMesh->GetNumTiles();
+    const IntVector2 beginTile = VectorMax(IntVector2::ZERO, jackTile - IntVector2::ONE * streamingDistance_);
+    const IntVector2 endTile = VectorMin(jackTile + IntVector2::ONE * streamingDistance_, numTiles - IntVector2::ONE);
+
+    // Remove tiles
+    for (HashSet<IntVector2>::Iterator i = addedTiles_.Begin(); i != addedTiles_.End();)
+    {
+        const IntVector2 tileIdx = *i;
+        if (beginTile.x_ <= tileIdx.x_ && tileIdx.x_ <= endTile.x_ && beginTile.y_ <= tileIdx.y_ && tileIdx.y_ <= endTile.y_)
+            ++i;
+        else
+        {
+            navMesh->RemoveTile(tileIdx);
+            i = addedTiles_.Erase(i);
+        }
+    }
+
+    // Add tiles
+    for (int z = beginTile.y_; z <= endTile.y_; ++z)
+        for (int x = beginTile.x_; x <= endTile.x_; ++x)
+        {
+            const IntVector2 tileIdx(x, z);
+            if (!navMesh->HasTile(tileIdx) && tileData_.Contains(tileIdx))
+            {
+                addedTiles_.Insert(tileIdx);
+                navMesh->AddTile(tileData_[tileIdx]);
+            }
+        }
+}
+
+void CrowdNavigation::SaveNavigationData()
+{
+    DynamicNavigationMesh* navMesh = scene_->GetComponent<DynamicNavigationMesh>();
+    tileData_.Clear();
+    addedTiles_.Clear();
+    const IntVector2 numTiles = navMesh->GetNumTiles();
+    for (int z = 0; z < numTiles.y_; ++z)
+        for (int x = 0; x <= numTiles.x_; ++x)
+        {
+            const IntVector2 tileIdx = IntVector2(x, z);
+            tileData_[tileIdx] = navMesh->GetTileData(tileIdx);
+        }
+}
+
 void CrowdNavigation::HandleUpdate(StringHash eventType, VariantMap& eventData)
 {
     using namespace Update;
@@ -479,6 +559,17 @@ void CrowdNavigation::HandleUpdate(StringHash eventType, VariantMap& eventData)
 
     // Move the camera, scale movement with time step
     MoveCamera(timeStep);
+
+    // Update streaming
+    Input* input = GetSubsystem<Input>();
+    if (input->GetKeyPress(KEY_TAB))
+    {
+        useStreaming_ = !useStreaming_;
+        ToggleStreaming(useStreaming_);
+    }
+    if (useStreaming_)
+        UpdateStreaming();
+
 }
 
 void CrowdNavigation::HandlePostRenderUpdate(StringHash eventType, VariantMap& eventData)
@@ -531,14 +622,14 @@ void CrowdNavigation::HandleCrowdAgentReposition(StringHash eventType, VariantMa
             // Face the direction of its velocity but moderate the turning speed based on the speed ratio and timeStep
             node->SetRotation(node->GetRotation().Slerp(Quaternion(Vector3::FORWARD, velocity), 10.0f * timeStep * speedRatio));
             // Throttle the animation speed based on agent speed ratio (ratio = 1 is full throttle)
-            animCtrl->SetSpeed(WALKING_ANI, speedRatio);
+            animCtrl->SetSpeed(WALKING_ANI, speedRatio * 1.5f);
         }
         else
             animCtrl->Play(WALKING_ANI, 0, true, 0.1f);
 
-        // If speed is too low then stopping the animation
+        // If speed is too low then stop the animation
         if (speed < agent->GetRadius())
-            animCtrl->Stop(WALKING_ANI, 0.8f);
+            animCtrl->Stop(WALKING_ANI, 0.5f);
     }
 }
 

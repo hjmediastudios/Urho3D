@@ -33,6 +33,7 @@ class Scene : public Node
     tolua_outside Node* SceneInstantiate @ Instantiate(const String fileName, const Vector3& position, const Quaternion& rotation, CreateMode mode = REPLICATED);
     tolua_outside Node* SceneInstantiateXML @ InstantiateXML(File* source, const Vector3& position, const Quaternion& rotation, CreateMode mode = REPLICATED);
     tolua_outside Node* SceneInstantiateXML @ InstantiateXML(const String fileName, const Vector3& position, const Quaternion& rotation, CreateMode mode = REPLICATED);
+    tolua_outside Node* SceneInstantiateJSON @ InstantiateJSON(const String fileName, const Vector3& position, const Quaternion& rotation, CreateMode mode = REPLICATED);
 
     bool LoadAsync(File* file, LoadMode mode = LOAD_SCENE_AND_RESOURCES);
     bool LoadAsyncXML(File* file, LoadMode mode = LOAD_SCENE_AND_RESOURCES);
@@ -82,6 +83,9 @@ class Scene : public Node
     void MarkNetworkUpdate(Component* component);
     void MarkReplicationDirty(Node* node);
     
+    // bool GetNodesWithTag(PODVector<Node*>& dest, const String& tag) const;
+    tolua_outside const PODVector<Node*>&  SceneGetNodesWithTag @ GetNodesWithTag( const String& tag) const; 
+
     tolua_property__is_set bool updateEnabled;
     tolua_readonly tolua_property__is_set bool asyncLoading;
     tolua_readonly tolua_property__get_set float asyncProgress;
@@ -148,6 +152,14 @@ static bool SceneLoadXML(Scene* scene, const String& fileName)
     return file.IsOpen() && scene->LoadXML(file);
 }
 
+static const PODVector<Node*>& SceneGetNodesWithTag(const Scene* scene, const String& tag)
+{
+    static PODVector<Node*> result;
+    result.Clear();
+    scene->GetNodesWithTag(result, tag);
+    return result;
+}
+
 static bool SceneSaveXML(const Scene* scene, const String& fileName, const String& indentation)
 {
     File file(scene->GetContext(), fileName, FILE_WRITE);
@@ -212,5 +224,11 @@ static Node* SceneInstantiateXML(Scene* scene, const String& fileName, const Vec
 {
     File file(scene->GetContext(), fileName, FILE_READ);
     return file.IsOpen() ? scene->InstantiateXML(file, position, rotation, mode) : 0;
+}
+
+static Node* SceneInstantiateJSON(Scene* scene, const String& fileName, const Vector3& position, const Quaternion& rotation, CreateMode mode)
+{
+    File file(scene->GetContext(), fileName, FILE_READ);
+    return file.IsOpen() ? scene->InstantiateJSON(file, position, rotation, mode) : 0;
 }
 $}

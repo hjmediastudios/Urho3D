@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -44,30 +44,30 @@ enum PListValueType
 class PListValue;
 
 /// PList value map.
-typedef HashMap<String, PListValue> PListValueMap;
+using PListValueMap = HashMap<String, PListValue>;
 
 /// Vector of PList value.
-typedef Vector<PListValue> PListValueVector;
+using PListValueVector = Vector<PListValue>;
 
 /// PList value.
 class URHO3D_API PListValue
 {
 public:
-    // Construct.
+    /// Construct.
     PListValue();
-    // Construct from int.
+    /// Construct from int.
     PListValue(int value);
-    // Construct from boolean.
+    /// Construct from boolean.
     PListValue(bool value);
-    // Construct from float.
+    /// Construct from float.
     PListValue(float value);
-    // Construct from string.
+    /// Construct from string.
     PListValue(const String& value);
-    // Construct from value map.
+    /// Construct from value map.
     PListValue(PListValueMap& valueMap);
-    // Construct from value vector.
+    /// Construct from value vector.
     PListValue(PListValueVector& valueVector);
-    // Construct from another value.
+    /// Construct from another value.
     PListValue(const PListValue& value);
     /// Destruct.
     ~PListValue();
@@ -106,6 +106,8 @@ public:
     IntRect GetIntRect() const;
     /// Return IntVector2, for string type.
     IntVector2 GetIntVector2() const;
+    /// Return IntVector3, for string type.
+    IntVector3 GetIntVector3() const;
     /// Return value map.
     const PListValueMap& GetValueMap() const;
     /// Return value vector.
@@ -143,12 +145,12 @@ public:
     /// Construct.
     PListFile(Context* context);
     /// Destruct.
-    virtual ~PListFile();
+    virtual ~PListFile() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Load resource from stream. May be called from a worker thread. Return true if successful.
-    virtual bool BeginLoad(Deserializer& source);
+    virtual bool BeginLoad(Deserializer& source) override;
 
     /// Return root.
     const PListValueMap& GetRoot() const { return root_; }

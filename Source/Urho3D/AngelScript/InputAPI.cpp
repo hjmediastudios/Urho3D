@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -73,6 +73,7 @@ static void RegisterInputConstants(asIScriptEngine* engine)
     engine->RegisterGlobalProperty("const int QUAL_CTRL", (void*)&QUAL_CTRL);
     engine->RegisterGlobalProperty("const int QUAL_ALT", (void*)&QUAL_ALT);
     engine->RegisterGlobalProperty("const int QUAL_ANY", (void*)&QUAL_ANY);
+    engine->RegisterGlobalProperty("const int KEY_UNKNOWN", (void*)&KEY_UNKNOWN);
     engine->RegisterGlobalProperty("const int KEY_A", (void*)&KEY_A);
     engine->RegisterGlobalProperty("const int KEY_B", (void*)&KEY_B);
     engine->RegisterGlobalProperty("const int KEY_C", (void*)&KEY_C);
@@ -120,7 +121,7 @@ static void RegisterInputConstants(asIScriptEngine* engine)
     engine->RegisterGlobalProperty("const int KEY_GUI", (void*)&KEY_GUI);
     engine->RegisterGlobalProperty("const int KEY_PAUSE", (void*)&KEY_PAUSE);
     engine->RegisterGlobalProperty("const int KEY_CAPSLOCK", (void*)&KEY_CAPSLOCK);
-    engine->RegisterGlobalProperty("const int KEY_ESC", (void*)&KEY_ESC);
+    engine->RegisterGlobalProperty("const int KEY_ESCAPE", (void*)&KEY_ESCAPE);
     engine->RegisterGlobalProperty("const int KEY_SPACE", (void*)&KEY_SPACE);
     engine->RegisterGlobalProperty("const int KEY_PAGEUP", (void*)&KEY_PAGEUP);
     engine->RegisterGlobalProperty("const int KEY_PAGEDOWN", (void*)&KEY_PAGEDOWN);
@@ -497,6 +498,16 @@ static void InputSetMouseVisible(bool enable, Input* ptr)
     ptr->SetMouseVisible(enable, false);
 }
 
+static void InputSetMouseMode(MouseMode mode, Input* ptr)
+{
+    ptr->SetMouseMode(mode, false);
+}
+
+static void InputSetMouseGrabbed(bool enable, Input* ptr)
+{
+    ptr->SetMouseGrabbed(enable, false);
+}
+
 static void RegisterInput(asIScriptEngine* engine)
 {
     engine->RegisterEnum("MouseMode");
@@ -540,6 +551,7 @@ static void RegisterInput(asIScriptEngine* engine)
     engine->RegisterObjectMethod("Input", "uint LoadGestures(VectorBuffer&)", asFUNCTION(InputLoadGesturesVectorBuffer), asCALL_CDECL_OBJLAST);
     engine->RegisterObjectMethod("Input", "bool RemoveGesture(uint)", asMETHOD(Input, RemoveGesture), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "void RemoveAllGestures()", asMETHOD(Input, RemoveAllGestures), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Input", "void CenterMousePosition()", asMETHOD(Input, CenterMousePosition), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "int GetKeyFromName(const String&in) const", asMETHOD(Input, GetKeyFromName), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "int GetKeyFromScancode(int) const", asMETHOD(Input, GetKeyFromScancode), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "String GetKeyName(int) const", asMETHOD(Input, GetKeyName), asCALL_THISCALL);
@@ -550,10 +562,15 @@ static void RegisterInput(asIScriptEngine* engine)
     engine->RegisterObjectMethod("Input", "void set_mouseVisible(bool)", asFUNCTION(InputSetMouseVisible), asCALL_CDECL_OBJLAST);
     engine->RegisterObjectMethod("Input", "void ResetMouseVisible()", asMETHOD(Input, ResetMouseVisible), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "bool get_mouseVisible() const", asMETHOD(Input, IsMouseVisible), asCALL_THISCALL);
-    engine->RegisterObjectMethod("Input", "void set_mouseGrabbed(bool)", asMETHOD(Input, SetMouseGrabbed), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Input", "void SetMouseGrabbed(bool, bool = false)", asMETHOD(Input, SetMouseGrabbed), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Input", "void set_mouseGrabbed(bool)", asFUNCTION(InputSetMouseGrabbed), asCALL_CDECL_OBJLAST);
     engine->RegisterObjectMethod("Input", "bool get_mouseGrabbed() const", asMETHOD(Input, IsMouseGrabbed), asCALL_THISCALL);
-    engine->RegisterObjectMethod("Input", "void set_mouseMode(MouseMode) const", asMETHOD(Input, SetMouseMode), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Input", "void ResetMouseGrabbed()", asMETHOD(Input, ResetMouseGrabbed), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Input", "void SetMouseMode(MouseMode, bool = false)", asMETHOD(Input, SetMouseMode), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Input", "void set_mouseMode(MouseMode)", asFUNCTION(InputSetMouseMode), asCALL_CDECL_OBJLAST);
+    engine->RegisterObjectMethod("Input", "void ResetMouseMode()", asMETHOD(Input, ResetMouseMode), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "MouseMode get_mouseMode() const", asMETHOD(Input, GetMouseMode), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Input", "bool get_mouseLocked() const", asMETHOD(Input, IsMouseLocked), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "void set_screenJoystickVisible(int, bool)", asMETHOD(Input, SetScreenJoystickVisible), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "bool get_screenJoystickVisible(int)", asMETHOD(Input, IsScreenJoystickVisible), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "void set_screenKeyboardVisible(bool)", asMETHOD(Input, SetScreenKeyboardVisible), asCALL_THISCALL);
@@ -572,16 +589,19 @@ static void RegisterInput(asIScriptEngine* engine)
     engine->RegisterObjectMethod("Input", "bool get_qualifierDown(int) const", asMETHOD(Input, GetQualifierDown), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "bool get_qualifierPress(int) const", asMETHOD(Input, GetQualifierPress), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "int get_qualifiers() const", asMETHOD(Input, GetQualifiers), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Input", "void set_mousePosition(const IntVector2&in)", asMETHOD(Input, SetMousePosition), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "IntVector2 get_mousePosition() const", asMETHOD(Input, GetMousePosition), asCALL_THISCALL);
-    engine->RegisterObjectMethod("Input", "const IntVector2& get_mouseMove() const", asMETHOD(Input, GetMouseMove), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Input", "IntVector2 get_mouseMove() const", asMETHOD(Input, GetMouseMove), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "int get_mouseMoveX() const", asMETHOD(Input, GetMouseMoveX), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "int get_mouseMoveY() const", asMETHOD(Input, GetMouseMoveY), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "int get_mouseMoveWheel() const", asMETHOD(Input, GetMouseMoveWheel), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Input", "Vector2 get_inputScale() const", asMETHOD(Input, GetInputScale), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "uint get_numTouches() const", asMETHOD(Input, GetNumTouches), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "TouchState@+ get_touches(uint) const", asMETHOD(Input, GetTouch), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "uint get_numJoysticks() const", asMETHOD(Input, GetNumJoysticks), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "JoystickState@+ get_joysticks(int)", asMETHOD(Input, GetJoystick), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "JoystickState@+ get_joysticksByIndex(uint)", asMETHOD(Input, GetJoystickByIndex), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Input", "JoystickState@+ get_joysticksByName(const String& in)", asMETHOD(Input, GetJoystickByName), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "bool get_focus() const", asMETHOD(Input, HasFocus), asCALL_THISCALL);
     engine->RegisterObjectMethod("Input", "bool get_minimized() const", asMETHOD(Input, IsMinimized), asCALL_THISCALL);
     engine->RegisterGlobalFunction("Input@+ get_input()", asFUNCTION(GetInput), asCALL_CDECL);

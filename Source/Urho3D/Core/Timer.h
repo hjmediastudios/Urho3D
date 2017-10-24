@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -83,7 +83,7 @@ public:
     /// Construct.
     Time(Context* context);
     /// Destruct. Reset the low-resolution timer period if set.
-    virtual ~Time();
+    virtual ~Time() override;
 
     /// Begin new frame, with (last) frame duration in seconds and send frame start event.
     void BeginFrame(float timeStep);

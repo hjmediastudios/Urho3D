@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -117,13 +117,13 @@ void Zone::SetBoundingBox(const BoundingBox& box)
 
 void Zone::SetAmbientColor(const Color& color)
 {
-    ambientColor_ = Color(color, 1.0f);
+    ambientColor_ = color;
     MarkNetworkUpdate();
 }
 
 void Zone::SetFogColor(const Color& color)
 {
-    fogColor_ = Color(color, 1.0f);
+    fogColor_ = color;
     MarkNetworkUpdate();
 }
 
@@ -284,7 +284,7 @@ void Zone::UpdateAmbientGradient()
 
         // Gradient start position: get the highest priority zone that is not this zone
         int bestPriority = M_MIN_INT;
-        Zone* bestZone = 0;
+        Zone* bestZone = nullptr;
         for (PODVector<Zone*>::ConstIterator i = result.Begin(); i != result.End(); ++i)
         {
             Zone* zone = *i;
@@ -308,7 +308,7 @@ void Zone::UpdateAmbientGradient()
             octant_->GetRoot()->GetDrawables(query);
         }
         bestPriority = M_MIN_INT;
-        bestZone = 0;
+        bestZone = nullptr;
 
         for (PODVector<Zone*>::ConstIterator i = result.Begin(); i != result.End(); ++i)
         {
@@ -347,7 +347,7 @@ void Zone::ClearDrawablesZone()
             Drawable* drawable = *i;
             unsigned drawableFlags = drawable->GetDrawableFlags();
             if (drawableFlags & DRAWABLE_GEOMETRY)
-                drawable->SetZone(0);
+                drawable->SetZone(nullptr);
             else if (drawableFlags & DRAWABLE_ZONE)
             {
                 Zone* zone = static_cast<Zone*>(drawable);

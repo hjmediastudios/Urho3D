@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -118,7 +118,7 @@ public:
     /// Construct.
     View(Context* context);
     /// Destruct.
-    virtual ~View();
+    virtual ~View() override;
 
     /// Define with rendertarget and viewport. Return true if successful.
     bool Define(RenderSurface* renderTarget, Viewport* viewport);
@@ -146,13 +146,19 @@ public:
 
     /// Return information of the frame being rendered.
     const FrameInfo& GetFrameInfo() const { return frame_; }
-
+    
     /// Return the rendertarget. 0 if using the backbuffer.
     RenderSurface* GetRenderTarget() const { return renderTarget_; }
 
     /// Return whether should draw debug geometry.
     bool GetDrawDebug() const { return drawDebug_; }
 
+    /// Return view rectangle.
+    const IntRect& GetViewRect() const { return viewRect_; }
+    
+    /// Return view dimensions.
+    const IntVector2& GetViewSize() const { return viewSize_; }
+    
     /// Return geometry objects.
     const PODVector<Drawable*>& GetGeometries() const { return geometries_; }
 
@@ -177,12 +183,17 @@ public:
     /// Set global (per-frame) shader parameters. Called by Batch and internally by View.
     void SetGlobalShaderParameters();
     /// Set camera-specific shader parameters. Called by Batch and internally by View.
-    void SetCameraShaderParameters(Camera* camera, bool setProjectionMatrix);
+    void SetCameraShaderParameters(Camera* camera);
+    /// Set command's shader parameters if any. Called internally by View.
+    void SetCommandShaderParameters(const RenderPathCommand& command);
     /// Set G-buffer offset and inverse size shader parameters. Called by Batch and internally by View.
     void SetGBufferShaderParameters(const IntVector2& texSize, const IntRect& viewRect);
 
-    /// Draw a fullscreen quad. Shaders and renderstates must have been set beforehand.
-    void DrawFullscreenQuad(bool nearQuad);
+    /// Draw a fullscreen quad. Shaders and renderstates must have been set beforehand. Quad will be drawn to the middle of depth range, similarly to deferred directional lights.
+    void DrawFullscreenQuad(bool setIdentityProjection = false);
+
+    /// Get a named texture from the rendertarget list or from the resource cache, to be either used as a rendertarget or texture binding.
+    Texture* FindNamedTexture(const String& name, bool isRenderTarget, bool isVolumeMap = false);
 
 private:
     /// Query the octree for drawable objects.
@@ -248,20 +259,24 @@ private:
     Technique* GetTechnique(Drawable* drawable, Material* material);
     /// Check if material should render an auxiliary view (if it has a camera attached.)
     void CheckMaterialForAuxView(Material* material);
+    /// Set shader defines for a batch queue if used.
+    void SetQueueShaderDefines(BatchQueue& queue, const RenderPathCommand& command);
     /// Choose shaders for a batch and add it to queue.
     void AddBatchToQueue(BatchQueue& queue, Batch& batch, Technique* tech, bool allowInstancing = true, bool allowShadows = true);
     /// Prepare instancing buffer by filling it with all instance transforms.
     void PrepareInstancingBuffer();
     /// Set up a light volume rendering batch.
     void SetupLightVolumeBatch(Batch& batch);
+    /// Check whether a light queue needs shadow rendering.
+    bool NeedRenderShadowMap(const LightBatchQueue& queue);
     /// Render a shadow map.
     void RenderShadowMap(const LightBatchQueue& queue);
     /// Return the proper depth-stencil surface to use for a rendertarget.
     RenderSurface* GetDepthStencil(RenderSurface* renderTarget);
     /// Helper function to get the render surface from a texture. 2D textures will always return the first face only.
     RenderSurface* GetRenderSurfaceFromTexture(Texture* texture, CubeMapFace face = FACE_POSITIVE_X);
-    /// Get a named texture from the rendertarget list or from the resource cache, to be either used as a rendertarget or texture binding.
-    Texture* FindNamedTexture(const String& name, bool isRenderTarget, bool isVolumeMap = false);
+    /// Send a view update or render related event through the Renderer subsystem. The parameters are the same for all of them.
+    void SendViewEvent(StringHash eventType);
 
     /// Return the drawable's zone, or camera zone if it has override mode enabled.
     Zone* GetZone(Drawable* drawable)
@@ -321,6 +336,8 @@ private:
     Texture* viewportTextures_[MAX_VIEWPORT_TEXTURES];
     /// Color rendertarget active for the current renderpath command.
     RenderSurface* currentRenderTarget_;
+    /// Last used custom depth render surface.
+    RenderSurface* lastCustomDepthSurface_;
     /// Texture containing the latest viewport texture.
     Texture* currentViewportTexture_;
     /// Dummy texture for D3D9 depth only rendering.
@@ -414,6 +431,10 @@ private:
     unsigned litAlphaPassIndex_;
     /// Pointer to the light volume command if any.
     const RenderPathCommand* lightVolumeCommand_;
+    /// Pointer to the forwardlights command if any.
+    const RenderPathCommand* forwardLightsCommand_;
+    /// Pointer to the current commmand if it contains shader parameters to be set for a render pass.
+    const RenderPathCommand* passCommand_;
     /// Flag for scene being resolved from the backbuffer.
     bool usedResolve_;
 };

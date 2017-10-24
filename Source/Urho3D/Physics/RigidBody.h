@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -55,22 +55,22 @@ public:
     /// Construct.
     RigidBody(Context* context);
     /// Destruct. Free the rigid body and geometries.
-    virtual ~RigidBody();
+    virtual ~RigidBody() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Handle attribute write access.
-    virtual void OnSetAttribute(const AttributeInfo& attr, const Variant& src);
+    virtual void OnSetAttribute(const AttributeInfo& attr, const Variant& src) override;
     /// Apply attribute changes that can not be applied immediately. Called after scene load or a network update.
-    virtual void ApplyAttributes();
+    virtual void ApplyAttributes() override;
     /// Handle enabled/disabled state change.
-    virtual void OnSetEnabled();
+    virtual void OnSetEnabled() override;
     /// Return initial world transform to Bullet.
-    virtual void getWorldTransform(btTransform& worldTrans) const;
+    virtual void getWorldTransform(btTransform& worldTrans) const override;
     /// Update world transform from Bullet.
-    virtual void setWorldTransform(const btTransform& worldTrans);
+    virtual void setWorldTransform(const btTransform& worldTrans) override;
     /// Visualize the component as debug geometry.
-    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest);
+    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest) override;
 
     /// Set mass. Zero mass makes the body static.
     void SetMass(float mass);
@@ -153,10 +153,10 @@ public:
     PhysicsWorld* GetPhysicsWorld() const { return physicsWorld_; }
 
     /// Return Bullet rigid body.
-    btRigidBody* GetBody() const { return body_; }
+    btRigidBody* GetBody() const { return body_.Get(); }
 
     /// Return Bullet compound collision shape.
-    btCompoundShape* GetCompoundShape() const { return compoundShape_; }
+    btCompoundShape* GetCompoundShape() const { return compoundShape_.Get(); }
 
     /// Return mass.
     float GetMass() const { return mass_; }
@@ -230,7 +230,7 @@ public:
 
     /// Apply new world transform after a simulation step. Called internally.
     void ApplyWorldTransform(const Vector3& newWorldPosition, const Quaternion& newWorldRotation);
-    /// Update mass and inertia to the Bullet rigid body.
+    /// Update mass and inertia to the Bullet rigid body. Readd body to world if necessary: if was in world and the Bullet collision shape to use changed.
     void UpdateMass();
     /// Update gravity parameters to the Bullet rigid body.
     void UpdateGravity();
@@ -247,11 +247,11 @@ public:
 
 protected:
     /// Handle node being assigned.
-    virtual void OnNodeSet(Node* node);
+    virtual void OnNodeSet(Node* node) override;
     /// Handle scene being assigned.
-    virtual void OnSceneSet(Scene* scene);
+    virtual void OnSceneSet(Scene* scene) override;
     /// Handle node transform being dirtied.
-    virtual void OnMarkedDirty(Node* node);
+    virtual void OnMarkedDirty(Node* node) override;
 
 private:
     /// Create the rigid body, or re-add to the physics world with changed flags. Calls UpdateMass().
@@ -264,11 +264,11 @@ private:
     void HandleTargetRotation(StringHash eventType, VariantMap& eventData);
 
     /// Bullet rigid body.
-    btRigidBody* body_;
+    UniquePtr<btRigidBody> body_;
     /// Bullet compound collision shape.
-    btCompoundShape* compoundShape_;
+    UniquePtr<btCompoundShape> compoundShape_;
     /// Compound collision shape with center of mass offset applied.
-    btCompoundShape* shiftedCompoundShape_;
+    UniquePtr<btCompoundShape> shiftedCompoundShape_;
     /// Physics world.
     WeakPtr<PhysicsWorld> physicsWorld_;
     /// Smoothed transform, if has one.
@@ -305,6 +305,8 @@ private:
     bool inWorld_;
     /// Mass update enable flag.
     bool enableMassUpdate_;
+    /// Internal flag whether has simulated at least once.
+    mutable bool hasSimulated_;
 };
 
 }

@@ -1,6 +1,6 @@
 /*
    AngelCode Scripting Library
-   Copyright (c) 2003-2015 Andreas Jonsson
+   Copyright (c) 2003-2016 Andreas Jonsson
 
    This software is provided 'as-is', without any express or implied
    warranty. In no event will the authors be held liable for any
@@ -156,6 +156,7 @@
 //
 // How to identify different compilers
 //-----------------------------------------
+// Ref: http://nadeausoftware.com/articles/2012/10/c_c_tip_how_detect_compiler_name_and_version_using_compiler_predefined_macros
 
 // MS Visual C++
 //  _MSC_VER   is defined
@@ -168,10 +169,13 @@
 // GNU C based compilers
 //  __GNUC__   is defined
 
+// CLang/LLVM 
+// __clang__ is defined
+
 // Embarcadero C++Builder
 //  __BORLANDC__ is defined
 
-// Sun CC compiler
+// Oracle Solaris Studio (previously known as Sun CC compiler)
 // __SUNPRO_CC is defined
 
 
@@ -800,7 +804,7 @@
 
 			// As of version 4.7 MinGW changed the ABI, presumably
 			// to be better aligned with how MSVC works
-			// Urho3D: also check for Clang version and use the same workaround 
+			// Urho3D: also check for Clang version and use the same workaround
 			#if (__GNUC__ == 4 && __GNUC_MINOR__ >= 7) || __GNUC__ > 4
 				#define AS_MINGW47
 			#endif
@@ -846,7 +850,9 @@
 			#define THISCALL_PASS_OBJECT_POINTER_ON_THE_STACK
 			#define AS_X86
 			#undef AS_NO_THISCALL_FUNCTOR_METHOD
-		#elif defined(__LP64__) && !defined(__arm64__)
+
+		// Urho3D - use __aarch64__ instead of __arm64__ because GCC only emits the former
+		#elif defined(__LP64__) && !defined(__aarch64__)
 			#define AS_X64_GCC
 			#undef AS_NO_THISCALL_FUNCTOR_METHOD
 			#define HAS_128_BIT_PRIMITIVES
@@ -856,6 +862,17 @@
 			// STDCALL is not available on 64bit Linux
 			#undef STDCALL
 			#define STDCALL
+
+		// Urho3D - Add support for aarch64-linux-gnu
+		#elif defined(__aarch64__)
+			// AngelScript currently doesn't support native calling
+			// for 64bit ARM processors so it's necessary to turn on
+			// portability mode
+			#define AS_MAX_PORTABILITY
+			// STDCALL is not available on ARM
+			#undef STDCALL
+			#define STDCALL
+
 		#elif (defined(__ARMEL__) || defined(__arm__)) && !(defined(__ARM_ARCH_4__) || defined(__ARM_ARCH_4T__))
 			#define AS_ARM
 
@@ -1216,7 +1233,8 @@
 
 
 // The assert macro
-#if defined(ANDROID)
+// Urho3D - use __ANDROID__ define emitted by all Android compiler toolchains
+#if defined(ANDROID) || defined(__ANDROID__)
 	#if defined(AS_DEBUG)
 		#include <android/log.h>
 		#include <stdlib.h>

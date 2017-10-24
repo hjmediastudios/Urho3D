@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -42,14 +42,14 @@ public:
     /// Construct.
     ObjectAnimation(Context* context);
     /// Destruct.
-    virtual ~ObjectAnimation();
+    virtual ~ObjectAnimation() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Load resource from stream. May be called from a worker thread. Return true if successful.
-    virtual bool BeginLoad(Deserializer& source);
+    virtual bool BeginLoad(Deserializer& source) override;
     /// Save resource. Return true if successful.
-    virtual bool Save(Serializer& dest) const;
+    virtual bool Save(Serializer& dest) const override;
     /// Load from XML data. Return true if successful.
     bool LoadXML(const XMLElement& source);
     /// Save as XML data. Return true if successful.

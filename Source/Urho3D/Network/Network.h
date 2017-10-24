@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -52,17 +52,17 @@ public:
     /// Construct.
     Network(Context* context);
     /// Destruct.
-    ~Network();
+    virtual ~Network() override;
 
     /// Handle a kNet message from either a client or the server.
     virtual void HandleMessage
-        (kNet::MessageConnection* source, kNet::packet_id_t packetId, kNet::message_id_t msgId, const char* data, size_t numBytes);
+        (kNet::MessageConnection* source, kNet::packet_id_t packetId, kNet::message_id_t msgId, const char* data, size_t numBytes) override;
     /// Compute the content ID for a message.
-    virtual u32 ComputeContentID(kNet::message_id_t msgId, const char* data, size_t numBytes);
+    virtual u32 ComputeContentID(kNet::message_id_t msgId, const char* data, size_t numBytes) override;
     /// Handle a new client connection.
-    virtual void NewConnectionEstablished(kNet::MessageConnection* connection);
+    virtual void NewConnectionEstablished(kNet::MessageConnection* connection) override;
     /// Handle a client disconnection.
-    virtual void ClientDisconnected(kNet::MessageConnection* connection);
+    virtual void ClientDisconnected(kNet::MessageConnection* connection) override;
 
     /// Connect to a server using UDP protocol. Return true if connection process successfully started.
     bool Connect(const String& address, unsigned short port, Scene* scene, const VariantMap& identity = Variant::emptyVariantMap);
@@ -147,7 +147,7 @@ private:
     void ConfigureNetworkSimulator();
 
     /// kNet instance.
-    kNet::Network* network_;
+    UniquePtr<kNet::Network> network_;
     /// Client's server connection.
     SharedPtr<Connection> serverConnection_;
     /// Server's client connections.

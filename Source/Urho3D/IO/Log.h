@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -78,7 +78,7 @@ public:
     /// Construct.
     Log(Context* context);
     /// Destruct. Close the log file if open.
-    virtual ~Log();
+    virtual ~Log() override;
 
     /// Open the log file.
     void Open(const String& fileName);

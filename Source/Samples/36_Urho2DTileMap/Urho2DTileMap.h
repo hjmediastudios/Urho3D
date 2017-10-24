@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -24,17 +24,12 @@
 
 #include "Sample.h"
 
-namespace Urho3D
-{
-    class Node;
-    class Scene;
-}
-
 /// Urho2D tile map example.
 /// This sample demonstrates:
 ///     - Creating a 2D scene with tile map
 ///     - Displaying the scene using the Renderer subsystem
 ///     - Handling keyboard to move and zoom 2D camera
+///     - Interacting with the tile map
 class Urho2DTileMap : public Sample
 {
     URHO3D_OBJECT(Urho2DTileMap, Sample);
@@ -44,11 +39,11 @@ public:
     Urho2DTileMap(Context* context);
 
     /// Setup after engine initialization and before running the main loop.
-    virtual void Start();
+    virtual void Start() override;
 
 protected:
     /// Return XML patch instructions for screen joystick layout for a specific sample app, if any.
-    virtual String GetScreenJoystickPatchString() const { return
+    virtual String GetScreenJoystickPatchString() const override { return
         "<patch>"
         "    <remove sel=\"/element/element[./attribute[@name='Name' and @value='Button0']]/attribute[@name='Is Visible']\" />"
         "    <replace sel=\"/element/element[./attribute[@name='Name' and @value='Button0']]/element[./attribute[@name='Name' and @value='Label']]/attribute[@name='Text']/@value\">Zoom In</replace>"
@@ -82,4 +77,8 @@ private:
     void SubscribeToEvents();
     /// Handle the logic update event.
     void HandleUpdate(StringHash eventType, VariantMap& eventData);
+    /// Handle the mouse click event.
+    void HandleMouseButtonDown(StringHash eventType, VariantMap& eventData);
+    /// Get mouse position in 2D world coordinates.
+    Vector2 GetMousePositionXY();
 };

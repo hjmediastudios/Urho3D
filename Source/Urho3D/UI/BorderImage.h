@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -40,12 +40,12 @@ public:
     /// Construct.
     BorderImage(Context* context);
     /// Destruct.
-    virtual ~BorderImage();
+    virtual ~BorderImage() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Return UI rendering batches.
-    virtual void GetBatches(PODVector<UIBatch>& batches, PODVector<float>& vertexData, const IntRect& currentScissor);
+    virtual void GetBatches(PODVector<UIBatch>& batches, PODVector<float>& vertexData, const IntRect& currentScissor) override;
 
     /// Set texture.
     void SetTexture(Texture* texture);

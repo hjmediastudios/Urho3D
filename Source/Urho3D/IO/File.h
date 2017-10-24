@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -24,17 +24,16 @@
 
 #include "../Container/ArrayPtr.h"
 #include "../Core/Object.h"
-#include "../IO/Deserializer.h"
-#include "../IO/Serializer.h"
+#include "../IO/AbstractFile.h"
 
-#ifdef ANDROID
-#include <SDL/SDL_rwops.h>
+#ifdef __ANDROID__
+struct SDL_RWops;
 #endif
 
 namespace Urho3D
 {
 
-#ifdef ANDROID
+#ifdef __ANDROID__
 extern const char* APK;
 
 // Macro for checking if a given pathname is inside APK's assets directory
@@ -58,7 +57,7 @@ enum FileMode
 class PackageFile;
 
 /// %File opened either through the filesystem or from within a package file.
-class URHO3D_API File : public Object, public Deserializer, public Serializer
+class URHO3D_API File : public Object, public AbstractFile
 {
     URHO3D_OBJECT(File, Object);
 
@@ -70,20 +69,20 @@ public:
     /// Construct and open from a package file.
     File(Context* context, PackageFile* package, const String& fileName);
     /// Destruct. Close the file if open.
-    virtual ~File();
+    virtual ~File() override;
 
     /// Read bytes from the file. Return number of bytes actually read.
-    virtual unsigned Read(void* dest, unsigned size);
+    virtual unsigned Read(void* dest, unsigned size) override;
     /// Set position from the beginning of the file.
-    virtual unsigned Seek(unsigned position);
+    virtual unsigned Seek(unsigned position) override;
     /// Write bytes to the file. Return number of bytes actually written.
-    virtual unsigned Write(const void* data, unsigned size);
+    virtual unsigned Write(const void* data, unsigned size) override;
 
     /// Return the file name.
-    virtual const String& GetName() const { return fileName_; }
+    virtual const String& GetName() const override { return fileName_; }
 
     /// Return a checksum of the file contents using the SDBM hash algorithm.
-    virtual unsigned GetChecksum();
+    virtual unsigned GetChecksum() override;
 
     /// Open a filesystem file. Return true if successful.
     bool Open(const String& fileName, FileMode mode = FILE_READ);
@@ -109,13 +108,20 @@ public:
     bool IsPackaged() const { return offset_ != 0; }
 
 private:
+    /// Open file internally using either C standard IO functions or SDL RWops for Android asset files. Return true if successful.
+    bool OpenInternal(const String& fileName, FileMode mode, bool fromPackage = false);
+    /// Perform the file read internally using either C standard IO functions or SDL RWops for Android asset files. Return true if successful. This does not handle compressed package file reading.
+    bool ReadInternal(void* dest, unsigned size);
+    /// Seek in file internally using either C standard IO functions or SDL RWops for Android asset files.
+    void SeekInternal(unsigned newPosition);
+
     /// File name.
     String fileName_;
     /// Open mode.
     FileMode mode_;
     /// File handle.
     void* handle_;
-#ifdef ANDROID
+#ifdef __ANDROID__
     /// SDL RWops context for Android asset loading.
     SDL_RWops* assetHandle_;
 #endif

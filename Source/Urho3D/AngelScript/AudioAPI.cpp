@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -33,7 +33,7 @@ namespace Urho3D
 
 void RegisterSound(asIScriptEngine* engine)
 {
-    RegisterResource<Sound>(engine, "Sound");
+    RegisterResourceWithMetadata<Sound>(engine, "Sound");
     engine->RegisterObjectMethod("Sound", "float get_length() const", asMETHOD(Sound, GetLength), asCALL_THISCALL);
     engine->RegisterObjectMethod("Sound", "uint get_sampleSize() const", asMETHOD(Sound, GetSampleSize), asCALL_THISCALL);
     engine->RegisterObjectMethod("Sound", "float get_frequency() const", asMETHOD(Sound, GetFrequency), asCALL_THISCALL);
@@ -86,6 +86,10 @@ void RegisterAudio(asIScriptEngine* engine)
     engine->RegisterObjectMethod("Audio", "void SetMode(int, int, bool, bool interpolate = true)", asMETHOD(Audio, SetMode), asCALL_THISCALL);
     engine->RegisterObjectMethod("Audio", "bool Play()", asMETHOD(Audio, Play), asCALL_THISCALL);
     engine->RegisterObjectMethod("Audio", "void Stop()", asMETHOD(Audio, Stop), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Audio", "void PauseSoundType(const String&in)", asMETHOD(Audio, PauseSoundType), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Audio", "void ResumeSoundType(const String&in)", asMETHOD(Audio, ResumeSoundType), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Audio", "void ResumeAll()", asMETHOD(Audio, ResumeAll), asCALL_THISCALL);
+    engine->RegisterObjectMethod("Audio", "bool IsSoundTypePaused(const String&in)", asMETHOD(Audio, IsSoundTypePaused), asCALL_THISCALL);
     engine->RegisterObjectMethod("Audio", "void set_masterGain(const String&in, float)", asMETHOD(Audio, SetMasterGain), asCALL_THISCALL);
     engine->RegisterObjectMethod("Audio", "float get_masterGain(const String&in) const", asMETHOD(Audio, GetMasterGain), asCALL_THISCALL);
     engine->RegisterObjectMethod("Audio", "bool HasMasterGain(const String&in) const", asMETHOD(Audio, HasMasterGain), asCALL_THISCALL);

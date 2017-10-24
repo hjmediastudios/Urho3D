@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -90,13 +90,10 @@ bool SpriteSheet2D::EndLoad()
     return false;
 }
 
-Sprite2D* SpriteSheet2D::GetSprite(const String& name) const
+void SpriteSheet2D::SetTexture(Texture2D* texture)
 {
-    HashMap<String, SharedPtr<Sprite2D> >::ConstIterator i = spriteMapping_.Find(name);
-    if (i == spriteMapping_.End())
-        return 0;
-
-    return i->second_;
+    loadTextureName_.Clear();
+    texture_ = texture;
 }
 
 void SpriteSheet2D::DefineSprite(const String& name, const IntRect& rectangle, const Vector2& hotSpot, const IntVector2& offset)
@@ -116,6 +113,15 @@ void SpriteSheet2D::DefineSprite(const String& name, const IntRect& rectangle, c
     sprite->SetSpriteSheet(this);
 
     spriteMapping_[name] = sprite;
+}
+
+Sprite2D* SpriteSheet2D::GetSprite(const String& name) const
+{
+    HashMap<String, SharedPtr<Sprite2D> >::ConstIterator i = spriteMapping_.Find(name);
+    if (i == spriteMapping_.End())
+        return nullptr;
+
+    return i->second_;
 }
 
 bool SpriteSheet2D::BeginLoadFromPListFile(Deserializer& source)
@@ -149,7 +155,7 @@ bool SpriteSheet2D::EndLoadFromPListFile()
     if (!texture_)
     {
         URHO3D_LOGERROR("Could not load texture " + loadTextureName_);
-        loadXMLFile_.Reset();
+        loadPListFile_.Reset();
         loadTextureName_.Clear();
         return false;
     }
@@ -185,7 +191,7 @@ bool SpriteSheet2D::EndLoadFromPListFile()
         DefineSprite(name, rectangle, hotSpot, offset);
     }
 
-    loadXMLFile_.Reset();
+    loadPListFile_.Reset();
     loadTextureName_.Clear();
     return true;
 }
@@ -323,7 +329,7 @@ bool SpriteSheet2D::EndLoadFromJSONFile()
         JSONValue frameWidthVal = subTextureVal.Get("frameWidth");
         JSONValue frameHeightVal = subTextureVal.Get("frameHeight");
 
-        if (!frameHeightVal.IsNull() && !frameHeightVal.IsNull())
+        if (!frameWidthVal.IsNull() && !frameHeightVal.IsNull())
         {
             offset.x_ = subTextureVal.Get("frameX").GetInt();
             offset.y_ = subTextureVal.Get("frameY").GetInt();

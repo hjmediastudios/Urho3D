@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -86,7 +86,7 @@ public:
     /// Construct.
     ResourceCache(Context* context);
     /// Destruct. Free all resources.
-    virtual ~ResourceCache();
+    virtual ~ResourceCache() override;
 
     /// Add a resource load directory. Optional priority parameter which will control search order.
     bool AddResourceDir(const String& pathName, unsigned priority = PRIORITY_LAST);
@@ -94,7 +94,7 @@ public:
     bool AddPackageFile(PackageFile* package, unsigned priority = PRIORITY_LAST);
     /// Add a package file for loading resources from by name. Optional priority parameter which will control search order.
     bool AddPackageFile(const String& fileName, unsigned priority = PRIORITY_LAST);
-    /// Add a manually created resource. Must be uniquely named.
+    /// Add a manually created resource. Must be uniquely named within its type.
     bool AddManualResource(Resource* resource);
     /// Remove a resource load directory.
     void RemoveResourceDir(const String& pathName);
@@ -141,7 +141,7 @@ public:
     /// Load a resource without storing it in the resource cache. Return null if not found or if fails. Can be called from outside the main thread if the resource itself is safe to load completely (it does not possess for example GPU data.)
     SharedPtr<Resource> GetTempResource(StringHash type, const String& name, bool sendEventOnFailure = true);
     /// Background load a resource. An event will be sent when complete. Return true if successfully stored to the load queue, false if eg. already exists. Can be called from outside the main thread.
-    bool BackgroundLoadResource(StringHash type, const String& name, bool sendEventOnFailure = true, Resource* caller = 0);
+    bool BackgroundLoadResource(StringHash type, const String& name, bool sendEventOnFailure = true, Resource* caller = nullptr);
     /// Return number of pending background-loaded resources.
     unsigned GetNumBackgroundLoadResources() const;
     /// Return all loaded resources of a specific type.
@@ -164,11 +164,13 @@ public:
     template <class T> T* GetExistingResource(const String& name);
     /// Template version of loading a resource without storing it to the cache.
     template <class T> SharedPtr<T> GetTempResource(const String& name, bool sendEventOnFailure = true);
+    /// Template version of releasing a resource by name.
+    template <class T> void ReleaseResource(const String& name, bool force = false);
     /// Template version of queueing a resource background load.
-    template <class T> bool BackgroundLoadResource(const String& name, bool sendEventOnFailure = true, Resource* caller = 0);
+    template <class T> bool BackgroundLoadResource(const String& name, bool sendEventOnFailure = true, Resource* caller = nullptr);
     /// Template version of returning loaded resources of a specific type.
     template <class T> void GetResources(PODVector<T*>& result) const;
-    /// Return whether a file exists by name.
+    /// Return whether a file exists in the resource directories or package files. Does not check manually added in-memory resources.
     bool Exists(const String& name) const;
     /// Return memory budget for a resource type.
     unsigned long long GetMemoryBudget(StringHash type) const;
@@ -176,7 +178,7 @@ public:
     unsigned long long GetMemoryUse(StringHash type) const;
     /// Return total memory use for all resources.
     unsigned long long GetTotalMemoryUse() const;
-    /// Return full absolute file name of resource if possible.
+    /// Return full absolute file name of resource if possible, or empty if not found.
     String GetResourceFileName(const String& name) const;
 
     /// Return whether automatic resource reloading is enabled.
@@ -262,6 +264,12 @@ template <class T> T* ResourceCache::GetResource(const String& name, bool sendEv
 {
     StringHash type = T::GetTypeStatic();
     return static_cast<T*>(GetResource(type, name, sendEventOnFailure));
+}
+
+template <class T> void ResourceCache::ReleaseResource(const String& name, bool force)
+{
+    StringHash type = T::GetTypeStatic();
+    ReleaseResource(type, name, force);
 }
 
 template <class T> SharedPtr<T> ResourceCache::GetTempResource(const String& name, bool sendEventOnFailure)

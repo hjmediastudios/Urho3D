@@ -11,15 +11,19 @@
 /include/
 /lib*/
 generated/
+/Source/Urho3D/tolua++-prefix/
 
 # Output files
 /Source/**/*.a
+/Source/ThirdParty/LuaJIT/src/host/buildvm
 /Source/ThirdParty/LuaJIT/src/host/buildvm_arch.h
+/Source/ThirdParty/LuaJIT/src/host/minilua
+/Source/Urho3D/Precompiled.cpp
 /Source/Urho3D/Urho3D.h
 /Source/Urho3D/Urho3D.pc
 /Source/Urho3D/Urho3D.pc.msvc
+/Source/Urho3D/Urho3DAll.h
 /Source/Urho3D/librevision.h
-/Source/Urho3D/Precompiled.cpp
 
 # Compiled shaders
 *.vs?
@@ -47,14 +51,17 @@ generated/
 
 # JetBrains IDE project settings
 /.idea/
+/cmake-build-*/
 
-# Custom rake tasks
-/.rake/
+# Code::Blocks project settings
+/*.cbp
+
+# Codelite project settings
+/*.project
+/*.workspace
 
 # Android project settings
-/Android/project.properties
 /Android/local.properties
-/Android/proguard-project.txt
 
 # Android output directories
 /Android/Urho3D/
@@ -72,12 +79,19 @@ CPackConfig.cmake
 CPackSourceConfig.cmake
 CTestTestfile.cmake
 /Source/**/*.cmake
+!/Source/ThirdParty/SDL/cmake/*.cmake
+!/Source/ThirdParty/SDL/include/*cmake
+!/Source/ThirdParty/Assimp/cmake-modules/*cmake
 /Docs/**/*.cmake
 
 # Precompiled header files
 *.gch/
 *.pch/
 *.pch.*
+
+# Custom rake tasks
+/.rake/
+.rake_t_cache
 
 # Misc.
 configure*
@@ -87,3 +101,4 @@ configure*
 *.log
 *.bak
 Thumbs.db
+.directory

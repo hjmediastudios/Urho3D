@@ -2,7 +2,8 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2015, assimp team
+Copyright (c) 2006-2017, assimp team
+
 All rights reserved.
 
 Redistribution and use of this software in source and binary forms,
@@ -38,28 +39,17 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ----------------------------------------------------------------------
 */
 
-// Modified by Lasse Oorni for Urho3D
-
 /** @file  FBXParser.h
  *  @brief FBX parsing code
  */
 #ifndef INCLUDED_AI_FBX_PARSER_H
 #define INCLUDED_AI_FBX_PARSER_H
 
-#include <vector>
-#include <map>
-#include <string>
-#include <utility>
-// Urho3D: VS2008 compatibility
-#if !defined(_MSC_VER) || (_MSC_VER >= 1600)
 #include <stdint.h>
-#else
-#include "../include/assimp/Compiler/pstdint.h"
-#endif
-
-#include <boost/shared_ptr.hpp>
-#include <boost/scoped_ptr.hpp>
+#include <map>
+#include <memory>
 #include "LogAux.h"
+#include "fast_atof.h"
 
 #include "FBXCompileConfig.h"
 #include "FBXTokenizer.h"
@@ -67,15 +57,15 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 namespace Assimp {
 namespace FBX {
 
-    class Scope;
-    class Parser;
-    class Element;
+class Scope;
+class Parser;
+class Element;
 
-    // XXX should use C++11's unique_ptr - but assimp's need to keep working with 03
-    typedef std::vector< Scope* > ScopeList;
-    typedef std::fbx_unordered_multimap< std::string, Element* > ElementMap;
+// XXX should use C++11's unique_ptr - but assimp's need to keep working with 03
+typedef std::vector< Scope* > ScopeList;
+typedef std::fbx_unordered_multimap< std::string, Element* > ElementMap;
 
-    typedef std::pair<ElementMap::const_iterator,ElementMap::const_iterator> ElementCollection;
+typedef std::pair<ElementMap::const_iterator,ElementMap::const_iterator> ElementCollection;
 
 #   define new_Scope new Scope
 #   define new_Element new Element
@@ -117,7 +107,7 @@ private:
 
     const Token& key_token;
     TokenList tokens;
-    boost::scoped_ptr<Scope> compound;
+    std::unique_ptr<Scope> compound;
 };
 
 
@@ -148,6 +138,17 @@ public:
         return it == elements.end() ? NULL : (*it).second;
     }
 
+	const Element* FindElementCaseInsensitive(const std::string& elementName) const {
+		const char* elementNameCStr = elementName.c_str();
+		for (auto element = elements.begin(); element != elements.end(); ++element)
+		{
+			if (!ASSIMP_strincmp(element->first.c_str(), elementNameCStr, MAXLEN)) {
+				return element->second;
+			}
+		}
+		return NULL;
+	}
+
     ElementCollection GetCollection(const std::string& index) const {
         return elements.equal_range(index);
     }
@@ -174,7 +175,6 @@ public:
     ~Parser();
 
 public:
-
     const Scope& GetRootScope() const {
         return *root.get();
     }
@@ -185,7 +185,6 @@ public:
     }
 
 private:
-
     friend class Scope;
     friend class Element;
 
@@ -195,14 +194,12 @@ private:
     TokenPtr CurrentToken() const;
 
 
-
 private:
-
     const TokenList& tokens;
 
     TokenPtr last, current;
     TokenList::const_iterator cursor;
-    boost::scoped_ptr<Scope> root;
+    std::unique_ptr<Scope> root;
 
     const bool is_binary;
 };

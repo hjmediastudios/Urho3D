@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -94,22 +94,22 @@ public:
     /// Construct.
     Scene(Context* context);
     /// Destruct.
-    virtual ~Scene();
+    virtual ~Scene() override;
     /// Register object factory. Node must be registered first.
     static void RegisterObject(Context* context);
 
     /// Load from binary data. Removes all existing child nodes and components first. Return true if successful.
-    virtual bool Load(Deserializer& source, bool setInstanceDefault = false);
+    virtual bool Load(Deserializer& source, bool setInstanceDefault = false) override;
     /// Save to binary data. Return true if successful.
-    virtual bool Save(Serializer& dest) const;
+    virtual bool Save(Serializer& dest) const override;
     /// Load from XML data. Removes all existing child nodes and components first. Return true if successful.
-    virtual bool LoadXML(const XMLElement& source, bool setInstanceDefault = false);
+    virtual bool LoadXML(const XMLElement& source, bool setInstanceDefault = false) override;
     /// Load from JSON data. Removes all existing child nodes and components first. Return true if successful.
-    virtual bool LoadJSON(const JSONValue& source, bool setInstanceDefault = false);
+    virtual bool LoadJSON(const JSONValue& source, bool setInstanceDefault = false) override;
     /// Mark for attribute check on the next network update.
-    virtual void MarkNetworkUpdate();
+    virtual void MarkNetworkUpdate() override;
     /// Add a replication state that is tracking this scene.
-    virtual void AddReplicationState(NodeReplicationState* state);
+    virtual void AddReplicationState(NodeReplicationState* state) override;
 
     /// Load from an XML file. Return true if successful.
     bool LoadXML(Deserializer& source);
@@ -137,9 +137,8 @@ public:
     /// Instantiate scene content from JSON data. Return root node if successful.
     Node* InstantiateJSON
         (const JSONValue& source, const Vector3& position, const Quaternion& rotation, CreateMode mode = REPLICATED);
-    /// Instantiate scene content from XML data. Return root node if successful.
+    /// Instantiate scene content from JSON data. Return root node if successful.
     Node* InstantiateJSON(Deserializer& source, const Vector3& position, const Quaternion& rotation, CreateMode mode = REPLICATED);
-
 
     /// Clear scene completely of either replicated, local or all nodes and components.
     void Clear(bool clearReplicated = true, bool clearLocal = true);
@@ -170,6 +169,8 @@ public:
     Node* GetNode(unsigned id) const;
     /// Return component from the whole scene by ID, or null if not found.
     Component* GetComponent(unsigned id) const;
+    /// Get nodes with specific tag from the whole scene, return false if empty.
+    bool GetNodesWithTag(PODVector<Node*>& dest, const String& tag)  const;
 
     /// Return whether updates are enabled.
     bool IsUpdateEnabled() const { return updateEnabled_; }
@@ -226,6 +227,12 @@ public:
     unsigned GetFreeNodeID(CreateMode mode);
     /// Get free component ID, either non-local or local.
     unsigned GetFreeComponentID(CreateMode mode);
+
+    /// Cache node by tag if tag not zero, no checking if already added. Used internaly in Node::AddTag.
+    void NodeTagAdded(Node* node, const String& tag);
+    /// Cache node by tag if tag not zero.
+    void NodeTagRemoved(Node* node, const String& tag);
+
     /// Node added. Assign scene pointer and add to ID map.
     void NodeAdded(Node* node);
     /// Node removed. Remove from ID map.
@@ -277,6 +284,8 @@ private:
     HashMap<unsigned, Component*> replicatedComponents_;
     /// Local components by ID.
     HashMap<unsigned, Component*> localComponents_;
+    /// Cached tagged nodes by tag.
+    HashMap<StringHash, PODVector<Node*> > taggedNodes_;
     /// Asynchronous loading progress.
     AsyncProgress asyncProgress_;
     /// Node and component ID resolver for asynchronous loading.

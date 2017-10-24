@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -39,18 +39,18 @@ public:
     /// Construct.
     Shader(Context* context);
     /// Destruct.
-    virtual ~Shader();
+    virtual ~Shader() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Load resource from stream. May be called from a worker thread. Return true if successful.
-    virtual bool BeginLoad(Deserializer& source);
+    virtual bool BeginLoad(Deserializer& source) override;
     /// Finish resource loading. Always called from the main thread. Return true if successful.
-    virtual bool EndLoad();
+    virtual bool EndLoad() override;
 
-    /// Return a variation with defines.
+    /// Return a variation with defines. Separate multiple defines with spaces.
     ShaderVariation* GetVariation(ShaderType type, const String& defines);
-    /// Return a variation with defines.
+    /// Return a variation with defines. Separate multiple defines with spaces.
     ShaderVariation* GetVariation(ShaderType type, const char* defines);
 
     /// Return either vertex or pixel shader source code.

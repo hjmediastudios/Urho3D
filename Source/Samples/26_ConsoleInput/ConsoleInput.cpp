@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -70,6 +70,7 @@ void ConsoleInput::Start()
 
     // Subscribe key down event
     SubscribeToEvent(E_KEYDOWN, URHO3D_HANDLER(ConsoleInput, HandleEscKeyDown));
+    UnsubscribeFromEvent(E_KEYUP);
 
     // Hide logo to make room for the console
     SetLogoVisible(false);
@@ -82,9 +83,18 @@ void ConsoleInput::Start()
     console->SetCommandInterpreter(GetTypeName());
     console->SetVisible(true);
     console->GetCloseButton()->SetVisible(false);
+    console->AddAutoComplete("help");
+    console->AddAutoComplete("eat");
+    console->AddAutoComplete("hide");
+    console->AddAutoComplete("wait");
+    console->AddAutoComplete("score");
+    console->AddAutoComplete("quit");
 
     // Show OS mouse cursor
     GetSubsystem<Input>()->SetMouseVisible(true);
+
+    // Set the mouse mode to use in the sample
+    Sample::InitMouseMode(MM_FREE);
 
     // Open the operating system console window (for stdin / stdout) if not open yet
     OpenConsoleWindow();
@@ -114,7 +124,7 @@ void ConsoleInput::HandleUpdate(StringHash eventType, VariantMap& eventData)
 void ConsoleInput::HandleEscKeyDown(StringHash eventType, VariantMap& eventData)
 {
     // Unlike the other samples, exiting the engine when ESC is pressed instead of just closing the console
-    if (eventData[KeyDown::P_KEY].GetInt() == KEY_ESC)
+    if (eventData[KeyDown::P_KEY].GetInt() == KEY_ESCAPE && GetPlatform() != "Web")
         engine_->Exit();
 }
 

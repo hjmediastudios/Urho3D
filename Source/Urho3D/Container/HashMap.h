@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,7 @@
 #include "../Container/Vector.h"
 
 #include <cassert>
+#include <initializer_list>
 
 namespace Urho3D
 {
@@ -36,8 +37,8 @@ namespace Urho3D
 template <class T, class U> class HashMap : public HashBase
 {
 public:
-    typedef T KeyType;
-    typedef U ValueType;
+    using KeyType = T;
+    using ValueType = U;
 
     /// Hash map key-value pair with const key.
     class KeyValue
@@ -237,7 +238,14 @@ public:
         head_ = tail_ = ReserveNode();
         *this = map;
     }
-
+    /// Aggregate initialization constructor.
+    HashMap(const std::initializer_list<Pair<T, U>>& list) : HashMap()
+    {
+        for (auto it = list.begin(); it != list.end(); it++)
+        {
+            Insert(*it);
+        }
+    }
     /// Destruct.
     ~HashMap()
     {
@@ -250,8 +258,12 @@ public:
     /// Assign a hash map.
     HashMap& operator =(const HashMap<T, U>& rhs)
     {
-        Clear();
-        Insert(rhs);
+        // In case of self-assignment do nothing
+        if (&rhs != this)
+        {
+            Clear();
+            Insert(rhs);
+        }
         return *this;
     }
 
@@ -329,10 +341,32 @@ public:
         return node ? &node->pair_.second_ : 0;
     }
 
+    /// Populate the map using variadic template. This handles the base case.
+    HashMap& Populate(const T& key, const U& value)
+    {
+        this->operator [](key) = value;
+        return *this;
+    };
+    /// Populate the map using variadic template.
+    template <typename... Args> HashMap& Populate(const T& key, const U& value, Args... args)
+    {
+        this->operator [](key) = value;
+        return Populate(args...);
+    };
+
     /// Insert a pair. Return an iterator to it.
     Iterator Insert(const Pair<T, U>& pair)
     {
         return Iterator(InsertNode(pair.first_, pair.second_));
+    }
+
+    /// Insert a pair. Return iterator and set exists flag according to whether the key already existed.
+    Iterator Insert(const Pair<T, U>& pair, bool& exists)
+    {
+        unsigned oldSize = Size();
+        Iterator ret(InsertNode(pair.first_, pair.second_));
+        exists = (Size() == oldSize);
+        return ret;
     }
 
     /// Insert a map.
@@ -518,6 +552,22 @@ public:
         return FindNode(key, hashKey) != 0;
     }
 
+    /// Try to copy value to output. Return true if was found.
+    bool TryGetValue(const T& key, U& out) const
+    {
+        if (!ptrs_)
+            return false;
+        unsigned hashKey = Hash(key);
+        Node* node = FindNode(key, hashKey);
+        if (node)
+        {
+            out = node->pair_.second_;
+            return true;
+        }
+        else
+            return false;
+    }
+
     /// Return all the keys.
     Vector<T> Keys() const
     {
@@ -550,11 +600,11 @@ public:
     /// Return iterator to the end.
     ConstIterator End() const { return ConstIterator(Tail()); }
 
-    /// Return first key.
-    const T& Front() const { return *Begin(); }
+    /// Return first pair.
+    const KeyValue& Front() const { return *Begin(); }
 
-    /// Return last key.
-    const T& Back() const { return *(--End()); }
+    /// Return last pair.
+    const KeyValue& Back() const { return *(--End()); }
 
 private:
     /// Return the head node.
@@ -719,15 +769,7 @@ private:
     unsigned Hash(const T& key) const { return MakeHash(key) & (NumBuckets() - 1); }
 };
 
-}
-
-namespace std
-{
-
-template <class T, class U> typename Urho3D::HashMap<T, U>::ConstIterator begin(const Urho3D::HashMap<T, U>& v)
-{
-    return v.Begin();
-}
+template <class T, class U> typename Urho3D::HashMap<T, U>::ConstIterator begin(const Urho3D::HashMap<T, U>& v) { return v.Begin(); }
 
 template <class T, class U> typename Urho3D::HashMap<T, U>::ConstIterator end(const Urho3D::HashMap<T, U>& v) { return v.End(); }
 

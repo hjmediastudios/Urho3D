@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -46,6 +46,8 @@ static const unsigned AM_NODEID = 0x10;
 static const unsigned AM_COMPONENTID = 0x20;
 /// Attribute is a node ID vector where first element is the amount of nodes.
 static const unsigned AM_NODEIDVECTOR = 0x40;
+/// Attribute is readonly. Can't be used with binary serialized objects.
+static const unsigned AM_FILEREADONLY = 0x81;
 
 class Serializable;
 
@@ -66,9 +68,9 @@ struct AttributeInfo
     AttributeInfo() :
         type_(VAR_NONE),
         offset_(0),
-        enumNames_(0),
+        enumNames_(nullptr),
         mode_(AM_DEFAULT),
-        ptr_(0)
+        ptr_(nullptr)
     {
     }
 
@@ -77,10 +79,10 @@ struct AttributeInfo
         type_(type),
         name_(name),
         offset_((unsigned)offset),
-        enumNames_(0),
+        enumNames_(nullptr),
         defaultValue_(defaultValue),
         mode_(mode),
-        ptr_(0)
+        ptr_(nullptr)
     {
     }
 
@@ -92,7 +94,7 @@ struct AttributeInfo
         enumNames_(enumNames),
         defaultValue_(defaultValue),
         mode_(mode),
-        ptr_(0)
+        ptr_(nullptr)
     {
     }
 
@@ -101,11 +103,11 @@ struct AttributeInfo
         type_(type),
         name_(name),
         offset_(0),
-        enumNames_(0),
+        enumNames_(nullptr),
         accessor_(accessor),
         defaultValue_(defaultValue),
         mode_(mode),
-        ptr_(0)
+        ptr_(nullptr)
     {
     }
 
@@ -119,8 +121,21 @@ struct AttributeInfo
         accessor_(accessor),
         defaultValue_(defaultValue),
         mode_(mode),
-        ptr_(0)
+        ptr_(nullptr)
     {
+    }
+
+    /// Get attribute metadata.
+    const Variant& GetMetadata(const StringHash& key) const
+    {
+        auto elem = metadata_.Find(key);
+        return elem != metadata_.End() ? elem->second_ : Variant::EMPTY;
+    }
+
+    /// Get attribute metadata of specified type.
+    template <class T> T GetMetadata(const StringHash& key) const
+    {
+        return GetMetadata(key).Get<T>();
     }
 
     /// Attribute type.
@@ -137,8 +152,35 @@ struct AttributeInfo
     Variant defaultValue_;
     /// Attribute mode: whether to use for serialization, network replication, or both.
     unsigned mode_;
+    /// Attribute metadata.
+    VariantMap metadata_;
     /// Attribute data pointer if elsewhere than in the Serializable.
     void* ptr_;
+};
+
+/// Attribute handle returned by Context::RegisterAttribute and used to chain attribute setup calls.
+struct AttributeHandle
+{
+    friend class Context;
+private:
+    /// Construct default.
+    AttributeHandle() = default;
+    /// Construct from another handle.
+    AttributeHandle(const AttributeHandle& another) = default;
+    /// Attribute info.
+    AttributeInfo* attributeInfo_ = nullptr;
+    /// Network attribute info.
+    AttributeInfo* networkAttributeInfo_ = nullptr;
+public:
+    /// Set metadata.
+    AttributeHandle& SetMetadata(StringHash key, const Variant& value)
+    {
+        if (attributeInfo_)
+            attributeInfo_->metadata_[key] = value;
+        if (networkAttributeInfo_)
+            networkAttributeInfo_->metadata_[key] = value;
+        return *this;
+    }
 };
 
 }

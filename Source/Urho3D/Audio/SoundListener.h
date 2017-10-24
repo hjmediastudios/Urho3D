@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -36,7 +36,7 @@ public:
     /// Construct.
     SoundListener(Context* context);
     /// Destruct.
-    virtual ~SoundListener();
+    virtual ~SoundListener() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 };

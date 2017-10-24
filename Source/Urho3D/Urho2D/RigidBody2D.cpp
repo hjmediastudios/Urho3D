@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -44,13 +44,13 @@ static const char* bodyTypeNames[] =
     "Static",
     "Kinematic",
     "Dynamic",
-    0
+    nullptr
 };
 
 RigidBody2D::RigidBody2D(Context* context) :
     Component(context),
     useFixtureMass_(true),
-    body_(0)
+    body_(nullptr)
 {
     // Make sure the massData members are zero-initialized.
     massData_.mass = 0.0f;
@@ -105,11 +105,6 @@ void RigidBody2D::OnSetEnabled()
 void RigidBody2D::SetBodyType(BodyType2D type)
 {
     b2BodyType bodyType = (b2BodyType)type;
-    if (bodyDef_.type == bodyType)
-        return;
-
-    bodyDef_.type = bodyType;
-
     if (body_)
     {
         body_->SetType(bodyType);
@@ -117,6 +112,13 @@ void RigidBody2D::SetBodyType(BodyType2D type)
         // If not using fixture mass, reassign our mass data now
         if (!useFixtureMass_)
             body_->SetMassData(&massData_);
+    }
+    else
+    {
+        if (bodyDef_.type == bodyType)
+            return;
+
+        bodyDef_.type = bodyType;
     }
 
     MarkNetworkUpdate();
@@ -173,7 +175,6 @@ void RigidBody2D::SetUseFixtureMass(bool useFixtureMass)
 
     if (body_)
     {
-        body_->m_useFixtureMass = useFixtureMass;
         if (useFixtureMass_)
             body_->ResetMassData();
         else
@@ -185,50 +186,51 @@ void RigidBody2D::SetUseFixtureMass(bool useFixtureMass)
 
 void RigidBody2D::SetLinearDamping(float linearDamping)
 {
-    if (bodyDef_.linearDamping == linearDamping)
-        return;
-
-    bodyDef_.linearDamping = linearDamping;
-
     if (body_)
         body_->SetLinearDamping(linearDamping);
+    else
+    {
+        if (bodyDef_.linearDamping == linearDamping)
+            return;
+
+        bodyDef_.linearDamping = linearDamping;
+    }
 
     MarkNetworkUpdate();
 }
 
 void RigidBody2D::SetAngularDamping(float angularDamping)
 {
-    if (bodyDef_.angularDamping == angularDamping)
-        return;
-
-    bodyDef_.angularDamping = angularDamping;
-
     if (body_)
         body_->SetAngularDamping(angularDamping);
+    else
+    {
+        if (bodyDef_.angularDamping == angularDamping)
+            return;
+
+        bodyDef_.angularDamping = angularDamping;
+    }
 
     MarkNetworkUpdate();
 }
 
 void RigidBody2D::SetAllowSleep(bool allowSleep)
 {
-    if (bodyDef_.allowSleep == allowSleep)
-        return;
-
-    bodyDef_.allowSleep = allowSleep;
-
     if (body_)
         body_->SetSleepingAllowed(allowSleep);
+    else
+    {
+        if (bodyDef_.allowSleep == allowSleep)
+            return;
+
+        bodyDef_.allowSleep = allowSleep;
+    }
 
     MarkNetworkUpdate();
 }
 
 void RigidBody2D::SetFixedRotation(bool fixedRotation)
 {
-    if (bodyDef_.fixedRotation == fixedRotation)
-        return;
-
-    bodyDef_.fixedRotation = fixedRotation;
-
     if (body_)
     {
         body_->SetFixedRotation(fixedRotation);
@@ -237,45 +239,58 @@ void RigidBody2D::SetFixedRotation(bool fixedRotation)
         if (!useFixtureMass_)
             body_->SetMassData(&massData_);
     }
+    else
+    {
+        if (bodyDef_.fixedRotation == fixedRotation)
+            return;
+
+        bodyDef_.fixedRotation = fixedRotation;
+    }
 
     MarkNetworkUpdate();
 }
 
 void RigidBody2D::SetBullet(bool bullet)
 {
-    if (bodyDef_.bullet == bullet)
-        return;
-
-    bodyDef_.bullet = bullet;
-
     if (body_)
         body_->SetBullet(bullet);
+    else
+    {
+        if (bodyDef_.bullet == bullet)
+            return;
+
+        bodyDef_.bullet = bullet;
+    }
 
     MarkNetworkUpdate();
 }
 
 void RigidBody2D::SetGravityScale(float gravityScale)
 {
-    if (bodyDef_.gravityScale == gravityScale)
-        return;
-
-    bodyDef_.gravityScale = gravityScale;
-
     if (body_)
         body_->SetGravityScale(gravityScale);
+    else
+    {
+        if (bodyDef_.gravityScale == gravityScale)
+            return;
+
+        bodyDef_.gravityScale = gravityScale;
+    }
 
     MarkNetworkUpdate();
 }
 
 void RigidBody2D::SetAwake(bool awake)
 {
-    if (bodyDef_.awake == awake)
-        return;
-
-    bodyDef_.awake = awake;
-
     if (body_)
         body_->SetAwake(awake);
+    else
+    {
+        if (bodyDef_.awake == awake)
+            return;
+
+        bodyDef_.awake = awake;
+    }
 
     MarkNetworkUpdate();
 }
@@ -283,26 +298,30 @@ void RigidBody2D::SetAwake(bool awake)
 void RigidBody2D::SetLinearVelocity(const Vector2& linearVelocity)
 {
     b2Vec2 b2linearVelocity = ToB2Vec2(linearVelocity);
-    if (bodyDef_.linearVelocity == b2linearVelocity)
-        return;
-
-    bodyDef_.linearVelocity = b2linearVelocity;
-
     if (body_)
         body_->SetLinearVelocity(b2linearVelocity);
+    else
+    {
+        if (bodyDef_.linearVelocity == b2linearVelocity)
+            return;
+
+        bodyDef_.linearVelocity = b2linearVelocity;
+    }
 
     MarkNetworkUpdate();
 }
 
 void RigidBody2D::SetAngularVelocity(float angularVelocity)
 {
-    if (bodyDef_.angularVelocity == angularVelocity)
-        return;
-
-    bodyDef_.angularVelocity = angularVelocity;
-
     if (body_)
         body_->SetAngularVelocity(angularVelocity);
+    else
+    {
+        if (bodyDef_.angularVelocity == angularVelocity)
+            return;
+
+        bodyDef_.angularVelocity = angularVelocity;
+    }
 
     MarkNetworkUpdate();
 }
@@ -331,6 +350,12 @@ void RigidBody2D::ApplyLinearImpulse(const Vector2& impulse, const Vector2& poin
         body_->ApplyLinearImpulse(ToB2Vec2(impulse), ToB2Vec2(point), wake);
 }
 
+void RigidBody2D::ApplyLinearImpulseToCenter(const Vector2& impulse, bool wake)
+{
+    if (body_ && impulse != Vector2::ZERO)
+        body_->ApplyLinearImpulseToCenter(ToB2Vec2(impulse), wake);
+}
+
 void RigidBody2D::ApplyAngularImpulse(float impulse, bool wake)
 {
     if (body_)
@@ -345,7 +370,7 @@ void RigidBody2D::CreateBody()
     if (!physicsWorld_ || !physicsWorld_->GetWorld())
         return;
 
-    bodyDef_.position = ToB2Vec2(node_->GetWorldPosition());;
+    bodyDef_.position = ToB2Vec2(node_->GetWorldPosition());
     bodyDef_.angle = node_->GetWorldRotation().RollAngle() * M_DEGTORAD;
 
     body_ = physicsWorld_->GetWorld()->CreateBody(&bodyDef_);
@@ -375,10 +400,12 @@ void RigidBody2D::ReleaseBody()
     if (!physicsWorld_ || !physicsWorld_->GetWorld())
         return;
 
-    for (unsigned i = 0; i < constraints_.Size(); ++i)
+    // Make a copy for iteration
+    Vector<WeakPtr<Constraint2D> > constraints = constraints_;
+    for (unsigned i = 0; i < constraints.Size(); ++i)
     {
-        if (constraints_[i])
-            constraints_[i]->ReleaseJoint();
+        if (constraints[i])
+            constraints[i]->ReleaseJoint();
     }
 
     for (unsigned i = 0; i < collisionShapes_.Size(); ++i)
@@ -388,24 +415,54 @@ void RigidBody2D::ReleaseBody()
     }
 
     physicsWorld_->GetWorld()->DestroyBody(body_);
-    body_ = 0;
+    body_ = nullptr;
 }
 
 void RigidBody2D::ApplyWorldTransform()
 {
-    if (!body_ || !body_->IsActive() || body_->GetType() == b2_staticBody || !body_->IsAwake())
+    if (!body_ || !node_)
         return;
 
-    physicsWorld_->SetApplyingTransforms(true);
+    // If the rigid body is parented to another rigid body, can not set the transform immediately.
+    // In that case store it to PhysicsWorld2D for delayed assignment
+    RigidBody2D* parentRigidBody = nullptr;
+    Node* parent = node_->GetParent();
+    if (parent != GetScene() && parent)
+        parentRigidBody = parent->GetComponent<RigidBody2D>();
+
+    // If body is not parented and is static or sleeping, no need to update
+    if (!parentRigidBody && (!body_->IsActive() || body_->GetType() == b2_staticBody || !body_->IsAwake()))
+        return;
 
     const b2Transform& transform = body_->GetTransform();
-    Vector3 worldPos = node_->GetWorldPosition();
-    worldPos.x_ = transform.p.x;
-    worldPos.y_ = transform.p.y;
-    node_->SetWorldPosition(worldPos);
-    node_->SetWorldRotation(Quaternion(transform.q.GetAngle() * M_RADTODEG, Vector3::FORWARD));
+    Vector3 newWorldPosition = node_->GetWorldPosition();
+    newWorldPosition.x_ = transform.p.x;
+    newWorldPosition.y_ = transform.p.y;
+    Quaternion newWorldRotation(transform.q.GetAngle() * M_RADTODEG, Vector3::FORWARD);
 
-    physicsWorld_->SetApplyingTransforms(false);
+    if (parentRigidBody)
+    {
+        DelayedWorldTransform2D delayed;
+        delayed.rigidBody_ = this;
+        delayed.parentRigidBody_ = parentRigidBody;
+        delayed.worldPosition_ = newWorldPosition;
+        delayed.worldRotation_ = newWorldRotation;
+        physicsWorld_->AddDelayedWorldTransform(delayed);
+    }
+    else
+        ApplyWorldTransform(newWorldPosition, newWorldRotation);
+}
+
+void RigidBody2D::ApplyWorldTransform(const Vector3& newWorldPosition, const Quaternion& newWorldRotation)
+{
+    if (newWorldPosition != node_->GetWorldPosition() || newWorldRotation != node_->GetWorldRotation())
+    {
+        // Do not feed changed position back to simulation now
+        physicsWorld_->SetApplyingTransforms(true);
+        node_->SetWorldPosition(newWorldPosition);
+        node_->SetWorldRotation(newWorldRotation);
+        physicsWorld_->SetApplyingTransforms(false);
+    }
 }
 
 void RigidBody2D::AddCollisionShape2D(CollisionShape2D* collisionShape)
@@ -509,7 +566,9 @@ void RigidBody2D::OnSceneSet(Scene* scene)
 {
     if (scene)
     {
-        physicsWorld_ = scene->GetOrCreateComponent<PhysicsWorld2D>();
+        physicsWorld_ = scene->GetDerivedComponent<PhysicsWorld2D>();
+        if (!physicsWorld_)
+            physicsWorld_ = scene->CreateComponent<PhysicsWorld2D>();
 
         CreateBody();
         physicsWorld_->AddRigidBody(this);
@@ -541,13 +600,14 @@ void RigidBody2D::OnMarkedDirty(Node* node)
     // Check if transform has changed from the last one set in ApplyWorldTransform()
     b2Vec2 newPosition = ToB2Vec2(node_->GetWorldPosition());
     float newAngle = node_->GetWorldRotation().RollAngle() * M_DEGTORAD;
-    if (newPosition != bodyDef_.position || newAngle != bodyDef_.angle)
+
+    if (!body_)
     {
         bodyDef_.position = newPosition;
         bodyDef_.angle = newAngle;
-        if (body_)
-            body_->SetTransform(newPosition, newAngle);
     }
+    else if (newPosition != body_->GetPosition() || newAngle != body_->GetAngle())
+        body_->SetTransform(newPosition, newAngle);
 }
 
 }

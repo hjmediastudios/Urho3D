@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -25,6 +25,10 @@
 #include "../Scene/Component.h"
 #include "../Urho2D/TileMapDefs2D.h"
 
+#ifdef GetObject
+#undef GetObject
+#endif
+
 namespace Urho3D
 {
 
@@ -45,12 +49,12 @@ public:
     /// Construct.
     TileMapLayer2D(Context* context);
     /// Destruct.
-    ~TileMapLayer2D();
+    virtual ~TileMapLayer2D() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Add debug geometry to the debug renderer.
-    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest);
+    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest) override;
 
     /// Initialize with tile map and tmx layer.
     void Initialize(TileMap2D* tileMap, const TmxLayer2D* tmxLayer);

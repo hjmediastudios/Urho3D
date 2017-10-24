@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -57,10 +57,10 @@ public:
     BackgroundLoader(ResourceCache* owner);
 
     /// Destruct. Forcibly clear the load queue.
-    ~BackgroundLoader();
+    virtual ~BackgroundLoader() override;
 
     /// Resource background loading loop.
-    virtual void ThreadFunction();
+    virtual void ThreadFunction() override;
 
     /// Queue loading of a resource. The name must be sanitated to ensure consistent format. Return true if queued (not a duplicate and resource was a known type).
     bool QueueResource(StringHash type, const String& name, bool sendEventOnFailure, Resource* caller);

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -50,7 +50,7 @@ void HashBase::ResetPtrs()
     unsigned numBuckets = NumBuckets();
     HashNodeBase** ptrs = Ptrs();
     for (unsigned i = 0; i < numBuckets; ++i)
-        ptrs[i] = 0;
+        ptrs[i] = nullptr;
 }
 
 }

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -166,7 +166,7 @@ unsigned Time::GetSystemTime()
 
 unsigned Time::GetTimeSinceEpoch()
 {
-    return (unsigned)time(NULL);
+    return (unsigned)time(nullptr);
 }
 
 String Time::GetTimeStamp()
@@ -182,7 +182,10 @@ void Time::Sleep(unsigned mSec)
 #ifdef _WIN32
     ::Sleep(mSec);
 #else
-    usleep(mSec * 1000);
+    timespec time;
+    time.tv_sec = mSec / 1000;
+    time.tv_nsec = (mSec % 1000) * 1000000;
+    nanosleep(&time, 0);
 #endif
 }
 

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -44,10 +44,10 @@ class URHO3D_API LogicComponent : public Component
     /// Construct.
     LogicComponent(Context* context);
     /// Destruct.
-    virtual ~LogicComponent();
+    virtual ~LogicComponent() override;
 
     /// Handle enabled/disabled state change. Changes update event subscription.
-    virtual void OnSetEnabled();
+    virtual void OnSetEnabled() override;
 
     /// Called when the component is added to a scene node. Other components may not yet exist.
     virtual void Start() { }
@@ -78,9 +78,9 @@ class URHO3D_API LogicComponent : public Component
 
 protected:
     /// Handle scene node being assigned at creation.
-    virtual void OnNodeSet(Node* node);
+    virtual void OnNodeSet(Node* node) override;
     /// Handle scene being assigned.
-    virtual void OnSceneSet(Scene* scene);
+    virtual void OnSceneSet(Scene* scene) override;
 
 private:
     /// Subscribe/unsubscribe to update events based on current enabled state and update event mask.
@@ -89,7 +89,7 @@ private:
     void HandleSceneUpdate(StringHash eventType, VariantMap& eventData);
     /// Handle scene post-update event.
     void HandleScenePostUpdate(StringHash eventType, VariantMap& eventData);
-#ifdef URHO3D_PHYSICS
+#if defined(URHO3D_PHYSICS) || defined(URHO3D_URHO2D)
     /// Handle physics pre-step event.
     void HandlePhysicsPreStep(StringHash eventType, VariantMap& eventData);
     /// Handle physics post-step event.

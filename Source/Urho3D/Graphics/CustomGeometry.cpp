@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -139,7 +139,7 @@ void CustomGeometry::ProcessRayQuery(const RayOctreeQuery& query, PODVector<RayQ
 
 Geometry* CustomGeometry::GetLodGeometry(unsigned batchIndex, unsigned level)
 {
-    return batchIndex < geometries_.Size() ? geometries_[batchIndex] : (Geometry*)0;
+    return batchIndex < geometries_.Size() ? geometries_[batchIndex] : nullptr;
 }
 
 unsigned CustomGeometry::GetNumOccluderTriangles()
@@ -188,11 +188,11 @@ bool CustomGeometry::DrawOcclusion(OcclusionBuffer* buffer)
         unsigned vertexSize;
         const unsigned char* indexData;
         unsigned indexSize;
-        unsigned elementMask;
+        const PODVector<VertexElement>* elements;
 
-        geometry->GetRawData(vertexData, vertexSize, indexData, indexSize, elementMask);
+        geometry->GetRawData(vertexData, vertexSize, indexData, indexSize, elements);
         // Check for valid geometry data
-        if (!vertexData)
+        if (!vertexData || !elements || VertexBuffer::GetElementOffset(*elements, TYPE_VECTOR3, SEM_POSITION) != 0)
             continue;
 
         // Draw and check for running out of triangles
@@ -389,7 +389,7 @@ void CustomGeometry::Commit()
                     ++vertexCount;
                 }
 
-                geometries_[i]->SetVertexBuffer(0, vertexBuffer_, elementMask_);
+                geometries_[i]->SetVertexBuffer(0, vertexBuffer_);
                 geometries_[i]->SetDrawRange(primitiveTypes_[i], 0, 0, vertexStart, vertexCount);
                 vertexStart += vertexCount;
             }
@@ -403,7 +403,7 @@ void CustomGeometry::Commit()
     {
         for (unsigned i = 0; i < geometries_.Size(); ++i)
         {
-            geometries_[i]->SetVertexBuffer(0, vertexBuffer_, elementMask_);
+            geometries_[i]->SetVertexBuffer(0, vertexBuffer_);
             geometries_[i]->SetDrawRange(primitiveTypes_[i], 0, 0, 0, 0);
         }
     }
@@ -439,13 +439,13 @@ unsigned CustomGeometry::GetNumVertices(unsigned index) const
 
 Material* CustomGeometry::GetMaterial(unsigned index) const
 {
-    return index < batches_.Size() ? batches_[index].material_ : (Material*)0;
+    return index < batches_.Size() ? batches_[index].material_ : nullptr;
 }
 
 CustomGeometryVertex* CustomGeometry::GetVertex(unsigned geometryIndex, unsigned vertexNum)
 {
     return (geometryIndex < vertices_.Size() && vertexNum < vertices_[geometryIndex].Size()) ?
-           &vertices_[geometryIndex][vertexNum] : (CustomGeometryVertex*)0;
+           &vertices_[geometryIndex][vertexNum] : nullptr;
 }
 
 void CustomGeometry::SetGeometryDataAttr(const PODVector<unsigned char>& value)

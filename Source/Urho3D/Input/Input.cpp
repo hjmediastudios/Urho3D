@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -30,7 +30,6 @@
 #include "../Core/StringUtils.h"
 #include "../Graphics/Graphics.h"
 #include "../Graphics/GraphicsEvents.h"
-#include "../Graphics/GraphicsImpl.h"
 #include "../Input/Input.h"
 #include "../IO/FileSystem.h"
 #include "../IO/Log.h"
@@ -38,6 +37,8 @@
 #include "../Resource/ResourceCache.h"
 #include "../UI/Text.h"
 #include "../UI/UI.h"
+
+#include <SDL/SDL.h>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/html5.h>
@@ -48,7 +49,7 @@
 extern "C" int SDL_AddTouch(SDL_TouchID touchID, const char* name);
 
 // Use a "click inside window to focus" mechanism on desktop platforms when the mouse cursor is hidden
-#if defined(_WIN32) || (defined(__APPLE__) && !defined(IOS)) || (defined(__linux__) && !defined(ANDROID) && !defined(RPI))
+#if defined(_WIN32) || (defined(__APPLE__) && !defined(IOS) && !defined(TVOS)) || (defined(__linux__) && !defined(__ANDROID__))
 #define REQUIRE_CLICK_TO_FOCUS
 #endif
 
@@ -67,9 +68,9 @@ const unsigned TOUCHID_MAX = 32;
 int ConvertSDLKeyCode(int keySym, int scanCode)
 {
     if (scanCode == SCANCODE_AC_BACK)
-        return KEY_ESC;
+        return KEY_ESCAPE;
     else
-        return SDL_toupper(keySym);
+        return SDL_tolower(keySym);
 }
 
 UIElement* TouchState::GetTouchedElement()
@@ -79,6 +80,7 @@ UIElement* TouchState::GetTouchedElement()
 
 #ifdef __EMSCRIPTEN__
 #define EM_TRUE 1
+#define EM_FALSE 0
 
 /// Glue between Urho Input and Emscripten HTML5
 /** HTML5 (Emscripten) is limited in the way it handles input. The EmscriptenInput class attempts to provide the glue between Urho3D Input behavior and HTML5, where SDL currently fails to do so.
@@ -95,6 +97,7 @@ UIElement* TouchState::GetTouchedElement()
 /// % Emscripten Input glue. Intended to be used by the Input subsystem only.
 class EmscriptenInput
 {
+    friend class Input;
 public:
     /// Constructor, expecting pointer to constructing Input instance.
     EmscriptenInput(Input* inputInst);
@@ -103,39 +106,80 @@ public:
     static EM_BOOL HandlePointerLockChange(int eventType, const EmscriptenPointerlockChangeEvent* keyEvent, void* userData);
     /// Static callback method for tracking focus change events.
     static EM_BOOL HandleFocusChange(int eventType, const EmscriptenFocusEvent* keyEvent, void* userData);
+    /// Static callback method for suppressing mouse jump.
+    static EM_BOOL HandleMouseJump(int eventType, const EmscriptenMouseEvent * mouseEvent, void* userData);
+
+    /// Static callback method to handle SDL events.
+    static int HandleSDLEvents(void* userData, SDL_Event* event);
 
     /// Send request to user to gain pointer lock. This requires a user-browser interaction on the first call.
-    void RequestPointerLock();
+    void RequestPointerLock(MouseMode mode, bool suppressEvent = false);
     /// Send request to exit pointer lock. This has the benefit of not requiring the user-browser interaction on the next pointer lock request.
-    void ExitPointerLock();
+    void ExitPointerLock(bool suppressEvent = false);
     /// Returns whether the page is visible.
     bool IsVisible();
 
 private:
     /// Instance of Input subsystem that constructed this instance.
     Input* inputInst_;
+    /// The mouse mode being requested for pointer-lock.
+    static MouseMode requestedMouseMode_;
+    /// Flag indicating whether to suppress the next mouse mode change event.
+    static bool suppressMouseModeEvent_;
+
+    /// The mouse mode of the previous request for pointer-lock.
+    static MouseMode invalidatedRequestedMouseMode_;
+    /// Flag indicating the previous request to suppress the next mouse mode change event.
+    static bool invalidatedSuppressMouseModeEvent_;
 };
 
-EmscriptenInput::EmscriptenInput(Input* inputInst)
+bool EmscriptenInput::suppressMouseModeEvent_ = false;
+MouseMode EmscriptenInput::requestedMouseMode_ = MM_INVALID;
+bool EmscriptenInput::invalidatedSuppressMouseModeEvent_ = false;
+MouseMode EmscriptenInput::invalidatedRequestedMouseMode_ = MM_INVALID;
+
+EmscriptenInput::EmscriptenInput(Input* inputInst) :
+    inputInst_(inputInst)
 {
-    inputInst_ = inputInst;
     void* vInputInst = (void*)inputInst;
+
+    // Handle pointer lock
     emscripten_set_pointerlockchange_callback(NULL, vInputInst, false, EmscriptenInput::HandlePointerLockChange);
 
-    // Handle focus changes:
-    emscripten_set_blur_callback(NULL, vInputInst, false, EmscriptenInput::HandleFocusChange);
+    // Handle mouse events to prevent mouse jumps
+    emscripten_set_mousedown_callback(NULL, vInputInst, true, EmscriptenInput::HandleMouseJump);
+    emscripten_set_mousemove_callback(NULL, vInputInst, true, EmscriptenInput::HandleMouseJump);
+
+    // Handle focus changes
+    emscripten_set_focusout_callback(NULL, vInputInst, false, EmscriptenInput::HandleFocusChange);
     emscripten_set_focus_callback(NULL, vInputInst, false, EmscriptenInput::HandleFocusChange);
+
+    // Handle SDL events
+    SDL_AddEventWatch(EmscriptenInput::HandleSDLEvents, vInputInst);
 }
 
-void EmscriptenInput::RequestPointerLock()
+void EmscriptenInput::RequestPointerLock(MouseMode mode, bool suppressEvent)
 {
+    requestedMouseMode_ = mode;
+    suppressMouseModeEvent_ = suppressEvent;
     emscripten_request_pointerlock(NULL, true);
 }
 
-void EmscriptenInput::ExitPointerLock()
+void EmscriptenInput::ExitPointerLock(bool suppressEvent)
 {
-    inputInst_->emscriptenExitingPointerLock_ = true;
-    emscripten_exit_pointerlock();
+    if (requestedMouseMode_ != MM_INVALID)
+    {
+        invalidatedRequestedMouseMode_ = requestedMouseMode_;
+        invalidatedSuppressMouseModeEvent_ = suppressMouseModeEvent_;
+    }
+    requestedMouseMode_ = MM_INVALID;
+    suppressMouseModeEvent_ = suppressEvent;
+
+    if (inputInst_->IsMouseLocked())
+    {
+        inputInst_->emscriptenExitingPointerLock_ = true;
+        emscripten_exit_pointerlock();
+    }
 }
 
 bool EmscriptenInput::IsVisible()
@@ -151,30 +195,104 @@ bool EmscriptenInput::IsVisible()
 
 EM_BOOL EmscriptenInput::HandlePointerLockChange(int eventType, const EmscriptenPointerlockChangeEvent* keyEvent, void* userData)
 {
-    Input* inputInst = (Input*)userData;
+    Input* const inputInst = (Input*)userData;
+
+    bool invalid = false;
+    const bool suppress = suppressMouseModeEvent_;
+    if (requestedMouseMode_ == MM_INVALID && invalidatedRequestedMouseMode_ != MM_INVALID)
+    {
+        invalid = true;
+        requestedMouseMode_ = invalidatedRequestedMouseMode_;
+        suppressMouseModeEvent_ = invalidatedSuppressMouseModeEvent_;
+        invalidatedRequestedMouseMode_ = MM_INVALID;
+        invalidatedSuppressMouseModeEvent_ = false;
+    }
+
     if (keyEvent->isActive >= EM_TRUE)
     {
         // Pointer Lock is now active
+        inputInst->emscriptenPointerLock_ = true;
         inputInst->emscriptenEnteredPointerLock_ = true;
-        inputInst->SetMouseModeEmscripten(MM_RELATIVE);
+        inputInst->SetMouseModeEmscriptenFinal(requestedMouseMode_, suppressMouseModeEvent_);
     }
     else
     {
         // Pointer Lock is now inactive
-        inputInst->SetMouseModeEmscripten(MM_ABSOLUTE);
+        inputInst->emscriptenPointerLock_ = false;
+
+        if (inputInst->mouseMode_ == MM_RELATIVE)
+            inputInst->SetMouseModeEmscriptenFinal(MM_FREE, suppressMouseModeEvent_);
+        else if (inputInst->mouseMode_ == MM_ABSOLUTE)
+            inputInst->SetMouseModeEmscriptenFinal(MM_ABSOLUTE, suppressMouseModeEvent_);
+
+        inputInst->emscriptenExitingPointerLock_ = false;
     }
+
+    if (invalid)
+    {
+        if (keyEvent->isActive >= EM_TRUE)
+        {
+            // ExitPointerLock was called before the pointer-lock request was accepted.
+            // Exit from pointer-lock to avoid unexpected behavior.
+            invalidatedRequestedMouseMode_ = MM_INVALID;
+            inputInst->emscriptenInput_->ExitPointerLock(suppress);
+            return EM_TRUE;
+        }
+    }
+
+    requestedMouseMode_ = MM_INVALID;
+    suppressMouseModeEvent_ = false;
+
+    invalidatedRequestedMouseMode_ = MM_INVALID;
+    invalidatedSuppressMouseModeEvent_ = false;
+
     return EM_TRUE;
 }
 
 EM_BOOL EmscriptenInput::HandleFocusChange(int eventType, const EmscriptenFocusEvent* keyEvent, void* userData)
 {
-    Input* inputInst = (Input*)userData;
-    if (eventType == EMSCRIPTEN_EVENT_BLUR)
+    Input* const inputInst = (Input*)userData;
+
+    inputInst->SuppressNextMouseMove();
+
+    if (eventType == EMSCRIPTEN_EVENT_FOCUSOUT)
         inputInst->LoseFocus();
     else if (eventType == EMSCRIPTEN_EVENT_FOCUS)
         inputInst->GainFocus();
+
     return EM_TRUE;
 }
+
+EM_BOOL EmscriptenInput::HandleMouseJump(int eventType, const EmscriptenMouseEvent * mouseEvent, void* userData)
+{
+    // Suppress mouse jump on pointer-lock change
+    Input* const inputInst = (Input*)userData;
+    bool suppress = false;
+    if (eventType == EMSCRIPTEN_EVENT_MOUSEDOWN && inputInst->emscriptenEnteredPointerLock_)
+    {
+        suppress = true;
+        inputInst->emscriptenEnteredPointerLock_ = false;
+    }
+    else if (eventType == EMSCRIPTEN_EVENT_MOUSEMOVE && inputInst->emscriptenExitingPointerLock_)
+    {
+        suppress = true;
+    }
+
+    if (suppress)
+        inputInst->SuppressNextMouseMove();
+
+    return EM_FALSE;
+}
+
+int EmscriptenInput::HandleSDLEvents(void* userData, SDL_Event* event)
+{
+    Input* const inputInst = (Input*)userData;
+
+    inputInst->HandleSDLEvent(event);
+
+    return 0;
+}
+
 #endif
 
 void JoystickState::Initialize(unsigned numButtons, unsigned numAxes, unsigned numHats)
@@ -206,31 +324,40 @@ Input::Input(Context* context) :
     mouseButtonPress_(0),
     lastVisibleMousePosition_(MOUSE_POSITION_OFFSCREEN),
     mouseMoveWheel_(0),
+    inputScale_(Vector2::ONE),
     windowID_(0),
     toggleFullscreen_(true),
     mouseVisible_(false),
     lastMouseVisible_(false),
     mouseGrabbed_(false),
+    lastMouseGrabbed_(false),
     mouseMode_(MM_ABSOLUTE),
-#ifdef __EMSCRIPTEN__
-    emscriptenExitingPointerLock_(false),
+    lastMouseMode_(MM_ABSOLUTE),
+#ifndef __EMSCRIPTEN__
+    sdlMouseRelative_(false),
+#else
+    emscriptenPointerLock_(false),
     emscriptenEnteredPointerLock_(false),
+    emscriptenExitingPointerLock_(false),
 #endif
     touchEmulation_(false),
     inputFocus_(false),
     minimized_(false),
     focusedThisFrame_(false),
     suppressNextMouseMove_(false),
-    inResize_(false),
-    screenModeChanged_(false),
+    mouseMoveScaled_(false),
     initialized_(false)
 {
+    context_->RequireSDL(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
+
     for (int i = 0; i < TOUCHID_MAX; i++)
         availableTouchIDs_.Push(i);
 
     SubscribeToEvent(E_SCREENMODE, URHO3D_HANDLER(Input, HandleScreenMode));
 
-#ifdef __EMSCRIPTEN__
+#if defined(__ANDROID__)
+    SDL_SetHint(SDL_HINT_ANDROID_SEPARATE_MOUSE_AND_TOUCH, "1");
+#elif defined(__EMSCRIPTEN__)
     emscriptenInput_ = new EmscriptenInput(this);
 #endif
 
@@ -240,10 +367,7 @@ Input::Input(Context* context) :
 
 Input::~Input()
 {
-#ifdef __EMSCRIPTEN__
-    delete emscriptenInput_;
-    emscriptenInput_ = 0;
-#endif
+    context_->ReleaseSDL();
 }
 
 void Input::Update()
@@ -252,46 +376,34 @@ void Input::Update()
 
     URHO3D_PROFILE(UpdateInput);
 
-    // Reset input accumulation for this frame
-    keyPress_.Clear();
-    scancodePress_.Clear();
-    mouseButtonPress_ = 0;
-    mouseMove_ = IntVector2::ZERO;
-    mouseMoveWheel_ = 0;
-    for (HashMap<SDL_JoystickID, JoystickState>::Iterator i = joysticks_.Begin(); i != joysticks_.End(); ++i)
-    {
-        for (unsigned j = 0; j < i->second_.buttonPress_.Size(); ++j)
-            i->second_.buttonPress_[j] = false;
-    }
+#ifndef __EMSCRIPTEN__
+    bool mouseMoved = false;
+    if (mouseMove_ != IntVector2::ZERO)
+        mouseMoved = true;
 
-    // Reset touch delta movement
-    for (HashMap<int, TouchState>::Iterator i = touches_.Begin(); i != touches_.End(); ++i)
-    {
-        TouchState& state = i->second_;
-        state.lastPosition_ = state.position_;
-        state.delta_ = IntVector2::ZERO;
-    }
+    ResetInputAccumulation();
 
     SDL_Event evt;
     while (SDL_PollEvent(&evt))
         HandleSDLEvent(&evt);
 
+    if (suppressNextMouseMove_ && (mouseMove_ != IntVector2::ZERO || mouseMoved))
+        UnsuppressMouseMove();
+#endif
+
     // Check for focus change this frame
-    SDL_Window* window = graphics_->GetImpl()->GetWindow();
+    SDL_Window* window = graphics_->GetWindow();
     unsigned flags = window ? SDL_GetWindowFlags(window) & (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS) : 0;
 #ifndef __EMSCRIPTEN__
     if (window)
     {
 #ifdef REQUIRE_CLICK_TO_FOCUS
         // When using the "click to focus" mechanism, only focus automatically in fullscreen or non-hidden mouse mode
-        if (!inputFocus_ && ((mouseVisible_ || mouseMode_ == MM_FREE) || graphics_->GetFullscreen() || screenModeChanged_) && (flags & SDL_WINDOW_INPUT_FOCUS))
+        if (!inputFocus_ && ((mouseVisible_ || mouseMode_ == MM_FREE) || graphics_->GetFullscreen()) && (flags & SDL_WINDOW_INPUT_FOCUS))
 #else
         if (!inputFocus_ && (flags & SDL_WINDOW_INPUT_FOCUS))
 #endif
-        {
-            screenModeChanged_ = false;
             focusedThisFrame_ = true;
-        }
 
         if (focusedThisFrame_)
             GainFocus();
@@ -306,12 +418,18 @@ void Input::Update()
     // Handle mouse mode MM_WRAP
     if (mouseVisible_ && mouseMode_ == MM_WRAP)
     {
+        IntVector2 windowPos = graphics_->GetWindowPosition();
         IntVector2 mpos;
-        SDL_GetMouseState(&mpos.x_, &mpos.y_);
+        SDL_GetGlobalMouseState(&mpos.x_, &mpos.y_);
+        mpos -= windowPos;
 
         const int buffer = 5;
-        int width = graphics_->GetWidth() - buffer * 2;
-        int height = graphics_->GetHeight() - buffer * 2;
+        const int width = graphics_->GetWidth() - buffer * 2;
+        const int height = graphics_->GetHeight() - buffer * 2;
+
+        // SetMousePosition utilizes backbuffer coordinate system, scale now from window coordinates
+        mpos.x_ = (int)(mpos.x_ * inputScale_.x_);
+        mpos.y_ = (int)(mpos.y_ * inputScale_.y_);
 
         bool warp = false;
         if (mpos.x_ < buffer)
@@ -341,69 +459,50 @@ void Input::Update()
         if (warp)
         {
             SetMousePosition(mpos);
-            SDL_FlushEvent(SDL_MOUSEMOTION);
+            SuppressNextMouseMove();
         }
     }
 #else
     if (!window)
         return;
-
-    if (emscriptenExitingPointerLock_)
-    {
-        // Suppress mouse jump when exiting Pointer Lock
-        IntVector2 mousePosition = GetMousePosition();
-        mouseMove_ = IntVector2::ZERO;
-        lastMousePosition_ = lastVisibleMousePosition_;
-        emscriptenExitingPointerLock_ = false;
-        return;
-    }
 #endif
 
-    // Check for relative mode mouse move
-    // Note that Emscripten will use SDL mouse move events for relative mode instead
 #ifndef __EMSCRIPTEN__
-    if (!touchEmulation_ && (graphics_->GetExternalWindow() || ((!mouseVisible_ && mouseMode_ != MM_FREE) && inputFocus_ && (flags & SDL_WINDOW_MOUSE_FOCUS))))
+    if (!touchEmulation_ && (graphics_->GetExternalWindow() || ((!sdlMouseRelative_ && !mouseVisible_ && mouseMode_ != MM_FREE) && inputFocus_ && (flags & SDL_WINDOW_MOUSE_FOCUS))))
 #else
-    if (!touchEmulation_ && mouseMode_ != MM_RELATIVE && (graphics_->GetExternalWindow() || (!mouseVisible_ && inputFocus_ && (flags & SDL_WINDOW_MOUSE_FOCUS))))
+    if (!touchEmulation_ && !emscriptenPointerLock_ && (graphics_->GetExternalWindow() || (!mouseVisible_ && inputFocus_ && (flags & SDL_WINDOW_MOUSE_FOCUS))))
 #endif
     {
-        IntVector2 mousePosition = GetMousePosition();
+        const IntVector2 mousePosition = GetMousePosition();
         mouseMove_ = mousePosition - lastMousePosition_;
+        mouseMoveScaled_ = true; // Already in backbuffer scale, since GetMousePosition() operates in that
+
 #ifndef __EMSCRIPTEN__
         if (graphics_->GetExternalWindow())
             lastMousePosition_ = mousePosition;
         else
         {
             // Recenter the mouse cursor manually after move
-            IntVector2 center(graphics_->GetWidth() / 2, graphics_->GetHeight() / 2);
-            if (mousePosition != center)
-            {
-                SetMousePosition(center);
-                lastMousePosition_ = center;
-            }
+            CenterMousePosition();
         }
 #else
-        if (mouseMode_ == MM_ABSOLUTE)
+        if (mouseMode_ == MM_ABSOLUTE || mouseMode_ == MM_FREE)
             lastMousePosition_ = mousePosition;
+
+        if (emscriptenExitingPointerLock_)
+            SuppressNextMouseMove();
 #endif
         // Send mouse move event if necessary
         if (mouseMove_ != IntVector2::ZERO)
         {
-            if (suppressNextMouseMove_)
-            {
-                mouseMove_ = IntVector2::ZERO;
-                suppressNextMouseMove_ = false;
-            }
-            else
+            if (!suppressNextMouseMove_)
             {
                 using namespace MouseMove;
 
                 VariantMap& eventData = GetEventDataMap();
-                if (mouseVisible_)
-                {
-                    eventData[P_X] = mousePosition.x_;
-                    eventData[P_Y] = mousePosition.y_;
-                }
+
+                eventData[P_X] = mousePosition.x_;
+                eventData[P_Y] = mousePosition.y_;
                 eventData[P_DX] = mouseMove_.x_;
                 eventData[P_DY] = mouseMove_.y_;
                 eventData[P_BUTTONS] = mouseButtonDown_;
@@ -412,24 +511,36 @@ void Input::Update()
             }
         }
     }
+#ifndef __EMSCRIPTEN__
+    else if (!touchEmulation_ && !mouseVisible_ && sdlMouseRelative_ && inputFocus_ && (flags & SDL_WINDOW_MOUSE_FOCUS))
+    {
+        // Keep the cursor trapped in window.
+        CenterMousePosition();
+    }
+#endif
 }
 
 void Input::SetMouseVisible(bool enable, bool suppressEvent)
 {
+    const bool startMouseVisible = mouseVisible_;
+
     // In touch emulation mode only enabled mouse is allowed
     if (touchEmulation_)
         enable = true;
 
     // In mouse mode relative, the mouse should be invisible
     if (mouseMode_ == MM_RELATIVE)
+    {
+        if (!suppressEvent)
+            lastMouseVisible_ = enable;
+
         enable = false;
+    }
 
     // SDL Raspberry Pi "video driver" does not have proper OS mouse support yet, so no-op for now
 #ifndef RPI
     if (enable != mouseVisible_)
     {
-        mouseVisible_ = enable;
-
         if (initialized_)
         {
             // External windows can only support visible mouse cursor
@@ -441,170 +552,344 @@ void Input::SetMouseVisible(bool enable, bool suppressEvent)
                 return;
             }
 
-            if (!mouseVisible_ && inputFocus_)
+            if (!enable && inputFocus_)
             {
-                SDL_ShowCursor(SDL_FALSE);
 #ifndef __EMSCRIPTEN__
-                if (mouseMode_ != MM_FREE)
-                {
-                    // Recenter the mouse cursor manually when hiding it to avoid erratic mouse move for one frame
+                if (mouseVisible_)
                     lastVisibleMousePosition_ = GetMousePosition();
-                    IntVector2 center(graphics_->GetWidth() / 2, graphics_->GetHeight() / 2);
-                    SetMousePosition(center);
-                    lastMousePosition_ = center;
+
+                if (mouseMode_ == MM_ABSOLUTE)
+                    SetMouseModeAbsolute(SDL_TRUE);
+#else
+                if (mouseMode_ == MM_ABSOLUTE && !emscriptenPointerLock_)
+                    emscriptenInput_->RequestPointerLock(MM_ABSOLUTE, suppressEvent);
+#endif
+                SDL_ShowCursor(SDL_FALSE);
+                mouseVisible_ = false;
+            }
+            else if (mouseMode_ != MM_RELATIVE)
+            {
+                SetMouseGrabbed(false, suppressEvent);
+
+                SDL_ShowCursor(SDL_TRUE);
+                mouseVisible_ = true;
+
+#ifndef __EMSCRIPTEN__
+                if (mouseMode_ == MM_ABSOLUTE)
+                    SetMouseModeAbsolute(SDL_FALSE);
+
+                // Update cursor position
+                UI* ui = GetSubsystem<UI>();
+                Cursor* cursor = ui->GetCursor();
+                // If the UI Cursor was visible, use that position instead of last visible OS cursor position
+                if (cursor && cursor->IsVisible())
+                {
+                    IntVector2 pos = cursor->GetScreenPosition();
+                    if (pos != MOUSE_POSITION_OFFSCREEN)
+                    {
+                        SetMousePosition(pos);
+                        lastMousePosition_ = pos;
+                    }
+                }
+                else
+                {
+                    if (lastVisibleMousePosition_ != MOUSE_POSITION_OFFSCREEN)
+                    {
+                        SetMousePosition(lastVisibleMousePosition_);
+                        lastMousePosition_ = lastVisibleMousePosition_;
+                    }
                 }
 #else
-                lastVisibleMousePosition_ = GetMousePosition();
-                lastMousePosition_ = lastVisibleMousePosition_;
-#endif
-            }
-            else
-            {
-                SDL_ShowCursor(SDL_TRUE);
-#ifndef __EMSCRIPTEN__
-                if (lastVisibleMousePosition_.x_ != MOUSE_POSITION_OFFSCREEN.x_ &&
-                    lastVisibleMousePosition_.y_ != MOUSE_POSITION_OFFSCREEN.y_)
-                    SetMousePosition(lastVisibleMousePosition_);
-                lastMousePosition_ = lastVisibleMousePosition_;
+                if (mouseMode_ == MM_ABSOLUTE && emscriptenPointerLock_)
+                    emscriptenInput_->ExitPointerLock(suppressEvent);
 #endif
             }
         }
-
-        if (!suppressEvent)
+        else
         {
-            using namespace MouseVisibleChanged;
+            // Allow to set desired mouse visibility before initialization
+            mouseVisible_ = enable;
+        }
 
-            VariantMap& eventData = GetEventDataMap();
-            eventData[P_VISIBLE] = mouseVisible_;
-            SendEvent(E_MOUSEVISIBLECHANGED, eventData);
+        if (mouseVisible_ != startMouseVisible)
+        {
+            SuppressNextMouseMove();
+            if (!suppressEvent)
+            {
+                lastMouseVisible_ = mouseVisible_;
+                using namespace MouseVisibleChanged;
+
+                VariantMap& eventData = GetEventDataMap();
+                eventData[P_VISIBLE] = mouseVisible_;
+                SendEvent(E_MOUSEVISIBLECHANGED, eventData);
+            }
         }
     }
-
-    // Make sure last mouse visible is valid:
-    if (!suppressEvent)
-        lastMouseVisible_ = mouseVisible_;
 #endif
 }
 
 void Input::ResetMouseVisible()
 {
 #ifndef __EMSCRIPTEN__
-    SetMouseVisible(lastMouseVisible_, true);
+    SetMouseVisible(lastMouseVisible_, false);
 #else
-    SetMouseVisibleEmscripten(lastMouseVisible_);
+    SetMouseVisibleEmscripten(lastMouseVisible_, false);
 #endif
 }
 
 #ifdef __EMSCRIPTEN__
-void Input::SetMouseVisibleEmscripten(bool enable)
+void Input::SetMouseVisibleEmscripten(bool enable, bool suppressEvent)
 {
     if (enable != mouseVisible_)
     {
-        mouseVisible_ = enable;
-        SDL_ShowCursor(enable ? SDL_TRUE : SDL_FALSE);
-
-        if (!mouseVisible_)
-            lastVisibleMousePosition_ = GetMousePosition();
-
-        lastMousePosition_ = lastVisibleMousePosition_;
-    }
-}
-
-void Input::SetMouseModeEmscripten(MouseMode mode)
-{
-    mouseMode_ = mode;
-
-    if (mode == MM_RELATIVE)
-    {
-        SetMouseVisibleEmscripten(false);
-    }
-    else
-    {
-        ResetMouseVisible();
-    }
-    suppressNextMouseMove_ = true;
-
-    VariantMap& eventData = GetEventDataMap();
-    eventData[MouseModeChanged::P_MODE] = mode;
-    SendEvent(E_MOUSEMODECHANGED, eventData);
-}
-#endif
-
-void Input::SetMouseGrabbed(bool grab)
-{
-    mouseGrabbed_ = grab;
-}
-
-void Input::SetMouseMode(MouseMode mode)
-{
-    if (mode != mouseMode_)
-    {
-        MouseMode previousMode = mouseMode_;
-        mouseMode_ = mode;
-        suppressNextMouseMove_ = true;
-        SDL_Window* window = graphics_->GetImpl()->GetWindow();
-        // Handle changing away from previous mode
-        if (previousMode == MM_RELATIVE)
+        if (mouseMode_ == MM_ABSOLUTE)
         {
-#ifndef __EMSCRIPTEN__
-            /// \todo Use SDL_SetRelativeMouseMode() for MM_RELATIVE mode
-            ResetMouseVisible();
-#else
-            emscriptenInput_->ExitPointerLock();
-#endif
-
-            SDL_SetWindowGrab(window, SDL_FALSE);
-        }
-#ifndef __EMSCRIPTEN__
-        else if (previousMode == MM_WRAP)
-            SDL_SetWindowGrab(window, SDL_FALSE);
-#endif
-
-        // Handle changing to new mode
-        if (mode == MM_ABSOLUTE || mode == MM_FREE)
-        {
-#ifndef __EMSCRIPTEN__
-            SetMouseGrabbed(false);
-            VariantMap& eventData = GetEventDataMap();
-            eventData[MouseModeChanged::P_MODE] = mode;
-            SendEvent(E_MOUSEMODECHANGED, eventData);
-#else
-            // Deferred mouse mode change to PointerLock callback
-#endif
+            if (enable)
+            {
+                mouseVisible_ = true;
+                SDL_ShowCursor(SDL_TRUE);
+                emscriptenInput_->ExitPointerLock(suppressEvent);
+            }
+            else
+            {
+                if (emscriptenPointerLock_)
+                {
+                    mouseVisible_ = false;
+                    SDL_ShowCursor(SDL_FALSE);
+                }
+                else
+                    emscriptenInput_->RequestPointerLock(MM_ABSOLUTE, suppressEvent);
+            }
         }
         else
         {
-            SetMouseGrabbed(true);
-
-            if (mode == MM_RELATIVE)
-            {
-                SDL_SetWindowGrab(window, SDL_TRUE);
-#ifndef __EMSCRIPTEN__
-                SetMouseVisible(false, true);
-
-                VariantMap& eventData = GetEventDataMap();
-                eventData[MouseModeChanged::P_MODE] = mode;
-                SendEvent(E_MOUSEMODECHANGED, eventData);
-#else
-                // Defer mouse mode change to PointerLock callback
-                mouseMode_ = previousMode;
-                emscriptenInput_->RequestPointerLock();
-#endif
-
-            }
-#ifndef __EMSCRIPTEN__
-            else if (mode == MM_WRAP)
-            {
-                /// \todo When SDL 2.0.4 is integrated, use SDL_CaptureMouse() and global mouse functions for MM_WRAP mode.
-                SDL_SetWindowGrab(window, SDL_TRUE);
-
-                VariantMap& eventData = GetEventDataMap();
-                eventData[MouseModeChanged::P_MODE] = mode;
-                SendEvent(E_MOUSEMODECHANGED, eventData);
-            }
-#endif
+            mouseVisible_ = enable;
+            SDL_ShowCursor(enable ? SDL_TRUE : SDL_FALSE);
         }
     }
+
+    if (!suppressEvent)
+        lastMouseVisible_ = mouseVisible_;
+}
+
+void Input::SetMouseModeEmscriptenFinal(MouseMode mode, bool suppressEvent)
+{
+    if (!suppressEvent)
+        lastMouseMode_ = mode;
+
+    mouseMode_ = mode;
+
+    if (mode == MM_ABSOLUTE)
+    {
+        if (emscriptenPointerLock_)
+        {
+            SetMouseVisibleEmscripten(false, suppressEvent);
+        }
+        else
+        {
+            SetMouseVisibleEmscripten(true, suppressEvent);
+        }
+
+        UI* const ui = GetSubsystem<UI>();
+        Cursor* const cursor = ui->GetCursor();
+        SetMouseGrabbed(!(mouseVisible_ || (cursor && cursor->IsVisible())), suppressEvent);
+    }
+    else if (mode == MM_RELATIVE && emscriptenPointerLock_)
+    {
+        SetMouseGrabbed(true, suppressEvent);
+        SetMouseVisibleEmscripten(false, suppressEvent);
+    }
+    else
+    {
+        SetMouseGrabbed(false, suppressEvent);
+    }
+
+    SuppressNextMouseMove();
+
+    if (!suppressEvent)
+    {
+        VariantMap& eventData = GetEventDataMap();
+        eventData[MouseModeChanged::P_MODE] = mode;
+        eventData[MouseModeChanged::P_MOUSELOCKED] = IsMouseLocked();
+        SendEvent(E_MOUSEMODECHANGED, eventData);
+    }
+}
+
+void Input::SetMouseModeEmscripten(MouseMode mode, bool suppressEvent)
+{
+    if (mode != mouseMode_)
+        SuppressNextMouseMove();
+
+    const MouseMode previousMode = mouseMode_;
+    mouseMode_ = mode;
+
+    UI* const ui = GetSubsystem<UI>();
+    Cursor* const cursor = ui->GetCursor();
+
+    // Handle changing from previous mode
+    if (previousMode == MM_RELATIVE)
+        ResetMouseVisible();
+
+    // Handle changing to new mode
+    if (mode == MM_FREE)
+    {
+        // Attempt to cancel pending pointer-lock requests
+        emscriptenInput_->ExitPointerLock(suppressEvent);
+        SetMouseGrabbed(!(mouseVisible_ || (cursor && cursor->IsVisible())), suppressEvent);
+    }
+    else if (mode == MM_ABSOLUTE)
+    {
+        if (!mouseVisible_)
+        {
+            if (emscriptenPointerLock_)
+            {
+                SetMouseVisibleEmscripten(false, suppressEvent);
+            }
+            else
+            {
+                if (!cursor)
+                    SetMouseVisible(true, suppressEvent);
+                // Deferred mouse mode change to pointer-lock callback
+                mouseMode_ = previousMode;
+                emscriptenInput_->RequestPointerLock(MM_ABSOLUTE, suppressEvent);
+            }
+
+            SetMouseGrabbed(!(mouseVisible_ || (cursor && cursor->IsVisible())), suppressEvent);
+        }
+    }
+    else if (mode == MM_RELATIVE)
+    {
+        if (emscriptenPointerLock_)
+        {
+            SetMouseVisibleEmscripten(false, true);
+            SetMouseGrabbed(!(cursor && cursor->IsVisible()), suppressEvent);
+        }
+        else
+        {
+            // Defer mouse mode change to pointer-lock callback
+            SetMouseGrabbed(false, true);
+            mouseMode_ = previousMode;
+            emscriptenInput_->RequestPointerLock(MM_RELATIVE, suppressEvent);
+        }
+    }
+}
+#endif
+
+void Input::SetMouseGrabbed(bool grab, bool suppressEvent)
+{
+// To not interfere with touch UI operation, never report the mouse as grabbed on Android / iOS
+#if !defined(__ANDROID__) && !defined(IOS)
+    mouseGrabbed_ = grab;
+
+    if (!suppressEvent)
+        lastMouseGrabbed_ = grab;
+#endif
+}
+
+void Input::ResetMouseGrabbed()
+{
+    SetMouseGrabbed(lastMouseGrabbed_, true);
+}
+
+
+#ifndef __EMSCRIPTEN__
+void Input::SetMouseModeAbsolute(SDL_bool enable)
+{
+    SDL_Window* const window = graphics_->GetWindow();
+
+    SDL_SetWindowGrab(window, enable);
+}
+
+void Input::SetMouseModeRelative(SDL_bool enable)
+{
+    SDL_Window* const window = graphics_->GetWindow();
+
+    int result = SDL_SetRelativeMouseMode(enable);
+    sdlMouseRelative_ = enable && (result == 0);
+
+    if (result == -1)
+        SDL_SetWindowGrab(window, enable);
+}
+#endif
+
+void Input::SetMouseMode(MouseMode mode, bool suppressEvent)
+{
+    const MouseMode previousMode = mouseMode_;
+
+#ifdef __EMSCRIPTEN__
+    SetMouseModeEmscripten(mode, suppressEvent);
+#else
+    if (mode != mouseMode_)
+    {
+        if (initialized_)
+        {
+            SuppressNextMouseMove();
+
+            mouseMode_ = mode;
+            SDL_Window* const window = graphics_->GetWindow();
+
+            UI* const ui = GetSubsystem<UI>();
+            Cursor* const cursor = ui->GetCursor();
+
+            // Handle changing from previous mode
+            if (previousMode == MM_ABSOLUTE)
+            {
+                if (!mouseVisible_)
+                    SetMouseModeAbsolute(SDL_FALSE);
+            }
+            if (previousMode == MM_RELATIVE)
+            {
+                SetMouseModeRelative(SDL_FALSE);
+                ResetMouseVisible();
+            }
+            else if (previousMode == MM_WRAP)
+                SDL_SetWindowGrab(window, SDL_FALSE);
+
+            // Handle changing to new mode
+            if (mode == MM_ABSOLUTE)
+            {
+                if (!mouseVisible_)
+                    SetMouseModeAbsolute(SDL_TRUE);
+            }
+            else if (mode == MM_RELATIVE)
+            {
+                SetMouseVisible(false, true);
+                SetMouseModeRelative(SDL_TRUE);
+            }
+            else if (mode == MM_WRAP)
+            {
+                SetMouseGrabbed(true, suppressEvent);
+                SDL_SetWindowGrab(window, SDL_TRUE);
+            }
+
+            if (mode != MM_WRAP)
+                SetMouseGrabbed(!(mouseVisible_ || (cursor && cursor->IsVisible())), suppressEvent);
+        }
+        else
+        {
+            // Allow to set desired mouse mode before initialization
+            mouseMode_ = mode;
+        }
+    }
+#endif
+
+    if (!suppressEvent)
+    {
+        lastMouseMode_ = mode;
+
+        if (mouseMode_ != previousMode)
+        {
+            VariantMap& eventData = GetEventDataMap();
+            eventData[MouseModeChanged::P_MODE] = mode;
+            eventData[MouseModeChanged::P_MOUSELOCKED] = IsMouseLocked();
+            SendEvent(E_MOUSEMODECHANGED, eventData);
+        }
+    }
+}
+
+void Input::ResetMouseMode()
+{
+    SetMouseMode(lastMouseMode_, false);
 }
 
 void Input::SetToggleFullscreen(bool enable)
@@ -715,7 +1000,7 @@ SDL_JoystickID Input::AddScreenJoystick(XMLFile* layoutFile, XMLFile* styleFile)
             ++numButtons;
 
             // Check whether the button has key binding
-            Text* text = dynamic_cast<Text*>(element->GetChild("KeyBinding", false));
+            Text* text = element->GetChildDynamicCast<Text>("KeyBinding", false);
             if (text)
             {
                 text->SetVisible(false);
@@ -742,7 +1027,7 @@ SDL_JoystickID Input::AddScreenJoystick(XMLFile* layoutFile, XMLFile* styleFile)
             }
 
             // Check whether the button has mouse button binding
-            text = dynamic_cast<Text*>(element->GetChild("MouseButtonBinding", false));
+            text = element->GetChildDynamicCast<Text>("MouseButtonBinding", false);
             if (text)
             {
                 text->SetVisible(false);
@@ -767,12 +1052,12 @@ SDL_JoystickID Input::AddScreenJoystick(XMLFile* layoutFile, XMLFile* styleFile)
         {
             ++numHats;
 
-            Text* text = dynamic_cast<Text*>(element->GetChild("KeyBinding", false));
+            Text* text = element->GetChildDynamicCast<Text>("KeyBinding", false);
             if (text)
             {
                 text->SetVisible(false);
                 String keyBinding = text->GetText();
-                int mappedKeyBinding[4] = {'W', 'S', 'A', 'D'};
+                int mappedKeyBinding[4] = {KEY_W, KEY_S, KEY_A, KEY_D};
                 Vector<String> keyBindings;
                 if (keyBinding.Contains(' '))   // e.g.: "UP DOWN LEFT RIGHT"
                     keyBindings = keyBinding.Split(' ');    // Attempt to split the text using ' ' as separator
@@ -861,10 +1146,7 @@ void Input::SetScreenJoystickVisible(SDL_JoystickID id, bool enable)
 
 void Input::SetScreenKeyboardVisible(bool enable)
 {
-    if (!graphics_)
-        return;
-
-    if (enable != IsScreenKeyboardVisible())
+    if (enable != SDL_IsTextInputActive())
     {
         if (enable)
             SDL_StartTextInput();
@@ -875,7 +1157,7 @@ void Input::SetScreenKeyboardVisible(bool enable)
 
 void Input::SetTouchEmulation(bool enable)
 {
-#if !defined(ANDROID) && !defined(IOS)
+#if !defined(__ANDROID__) && !defined(IOS)
     if (enable != touchEmulation_)
     {
         if (enable)
@@ -1018,12 +1300,12 @@ String Input::GetScancodeName(int scancode) const
 
 bool Input::GetKeyDown(int key) const
 {
-    return keyDown_.Contains(SDL_toupper(key));
+    return keyDown_.Contains(SDL_tolower(key));
 }
 
 bool Input::GetKeyPress(int key) const
 {
-    return keyPress_.Contains(SDL_toupper(key));
+    return keyPress_.Contains(SDL_tolower(key));
 }
 
 bool Input::GetScancodeDown(int scancode) const
@@ -1091,14 +1373,40 @@ IntVector2 Input::GetMousePosition() const
         return ret;
 
     SDL_GetMouseState(&ret.x_, &ret.y_);
+    ret.x_ = (int)(ret.x_ * inputScale_.x_);
+    ret.y_ = (int)(ret.y_ * inputScale_.y_);
 
     return ret;
+}
+
+IntVector2 Input::GetMouseMove() const
+{
+    if (!suppressNextMouseMove_)
+        return mouseMoveScaled_ ? mouseMove_ : IntVector2((int)(mouseMove_.x_ * inputScale_.x_), (int)(mouseMove_.y_ * inputScale_.y_));
+    else
+        return IntVector2::ZERO;
+}
+
+int Input::GetMouseMoveX() const
+{
+    if (!suppressNextMouseMove_)
+        return mouseMoveScaled_ ? mouseMove_.x_ : (int)(mouseMove_.x_ * inputScale_.x_);
+    else
+        return 0;
+}
+
+int Input::GetMouseMoveY() const
+{
+    if (!suppressNextMouseMove_)
+        return mouseMoveScaled_ ? mouseMove_.y_ : mouseMove_.y_ * inputScale_.y_;
+    else
+        return 0;
 }
 
 TouchState* Input::GetTouch(unsigned index) const
 {
     if (index >= touches_.Size())
-        return 0;
+        return nullptr;
 
     HashMap<int, TouchState>::ConstIterator i = touches_.Begin();
     while (index--)
@@ -1116,13 +1424,24 @@ JoystickState* Input::GetJoystickByIndex(unsigned index)
             return &(i->second_);
     }
 
-    return 0;
+    return nullptr;
+}
+
+JoystickState* Input::GetJoystickByName(const String& name)
+{
+    for (HashMap<SDL_JoystickID, JoystickState>::Iterator i = joysticks_.Begin(); i != joysticks_.End(); ++i)
+    {
+        if (i->second_.name_ == name)
+            return &(i->second_);
+    }
+
+    return nullptr;
 }
 
 JoystickState* Input::GetJoystick(SDL_JoystickID id)
 {
     HashMap<SDL_JoystickID, JoystickState>::Iterator i = joysticks_.Find(id);
-    return i != joysticks_.End() ? &(i->second_) : 0;
+    return i != joysticks_.End() ? &(i->second_) : nullptr;
 }
 
 bool Input::IsScreenJoystickVisible(SDL_JoystickID id) const
@@ -1133,18 +1452,21 @@ bool Input::IsScreenJoystickVisible(SDL_JoystickID id) const
 
 bool Input::GetScreenKeyboardSupport() const
 {
-    return graphics_ ? SDL_HasScreenKeyboardSupport() != 0 : false;
+    return SDL_HasScreenKeyboardSupport();
 }
 
 bool Input::IsScreenKeyboardVisible() const
 {
-    if (graphics_)
-    {
-        SDL_Window* window = graphics_->GetImpl()->GetWindow();
-        return SDL_IsScreenKeyboardShown(window) != SDL_FALSE;
-    }
-    else
-        return false;
+    return SDL_IsTextInputActive();
+}
+
+bool Input::IsMouseLocked() const
+{
+#ifdef __EMSCRIPTEN__
+    return emscriptenPointerLock_;
+#else
+    return !((mouseMode_ == MM_ABSOLUTE && mouseVisible_) || mouseMode_ == MM_FREE);
+#endif
 }
 
 bool Input::IsMinimized() const
@@ -1171,7 +1493,7 @@ void Input::Initialize()
     // Set the initial activation
     initialized_ = true;
 #ifndef __EMSCRIPTEN__
-    focusedThisFrame_ = true;
+    GainFocus();
 #else
     // Note: Page visibility and focus are slightly different, however we can't query last focus with Emscripten (1.29.0)
     if (emscriptenInput_->IsVisible())
@@ -1184,6 +1506,9 @@ void Input::Initialize()
     ResetState();
 
     SubscribeToEvent(E_BEGINFRAME, URHO3D_HANDLER(Input, HandleBeginFrame));
+#ifdef __EMSCRIPTEN__
+    SubscribeToEvent(E_ENDFRAME, URHO3D_HANDLER(Input, HandleEndFrame));
+#endif
 
     URHO3D_LOGINFO("Initialized input");
 }
@@ -1198,6 +1523,29 @@ void Input::ResetJoysticks()
         OpenJoystick(i);
 }
 
+void Input::ResetInputAccumulation()
+{
+    // Reset input accumulation for this frame
+    keyPress_.Clear();
+    scancodePress_.Clear();
+    mouseButtonPress_ = 0;
+    mouseMove_ = IntVector2::ZERO;
+    mouseMoveWheel_ = 0;
+    for (HashMap<SDL_JoystickID, JoystickState>::Iterator i = joysticks_.Begin(); i != joysticks_.End(); ++i)
+    {
+        for (unsigned j = 0; j < i->second_.buttonPress_.Size(); ++j)
+            i->second_.buttonPress_[j] = false;
+    }
+
+    // Reset touch delta movement
+    for (HashMap<int, TouchState>::Iterator i = touches_.Begin(); i != touches_.End(); ++i)
+    {
+        TouchState& state = i->second_;
+        state.lastPosition_ = state.position_;
+        state.delta_ = IntVector2::ZERO;
+    }
+}
+
 void Input::GainFocus()
 {
     ResetState();
@@ -1206,18 +1554,17 @@ void Input::GainFocus()
     focusedThisFrame_ = false;
 
     // Restore mouse mode
-    MouseMode mm = mouseMode_;
-    mouseMode_ = MM_ABSOLUTE;
-    SetMouseMode(mm);
+#ifndef __EMSCRIPTEN__
+    const MouseMode mm = mouseMode_;
+    mouseMode_ = MM_FREE;
+    SetMouseMode(mm, true);
+#endif
+
+    SuppressNextMouseMove();
 
     // Re-establish mouse cursor hiding as necessary
     if (!mouseVisible_)
-    {
         SDL_ShowCursor(SDL_FALSE);
-        suppressNextMouseMove_ = true;
-    }
-    else
-        lastMousePosition_ = GetMousePosition();
 
     SendInputFocusEvent();
 }
@@ -1229,16 +1576,16 @@ void Input::LoseFocus()
     inputFocus_ = false;
     focusedThisFrame_ = false;
 
-    MouseMode mm = mouseMode_;
-
     // Show the mouse cursor when inactive
     SDL_ShowCursor(SDL_TRUE);
 
     // Change mouse mode -- removing any cursor grabs, etc.
-    SetMouseMode(MM_ABSOLUTE);
-
+#ifndef __EMSCRIPTEN__
+    const MouseMode mm = mouseMode_;
+    SetMouseMode(MM_FREE, true);
     // Restore flags to reflect correct mouse state.
     mouseMode_ = mm;
+#endif
 
     SendInputFocusEvent();
 }
@@ -1357,18 +1704,6 @@ void Input::SendInputFocusEvent()
 
 void Input::SetMouseButton(int button, bool newState)
 {
-#ifdef __EMSCRIPTEN__
-    if (emscriptenEnteredPointerLock_)
-    {
-        // Suppress mouse jump on initial Pointer Lock
-        IntVector2 mousePosition = GetMousePosition();
-        lastMousePosition_ = mousePosition;
-        mouseMove_ = IntVector2::ZERO;
-        suppressNextMouseMove_ = true;
-        emscriptenEnteredPointerLock_ = false;
-    }
-#endif
-
     if (newState)
     {
         if (!(mouseButtonDown_ & button))
@@ -1393,7 +1728,7 @@ void Input::SetMouseButton(int button, bool newState)
     SendEvent(newState ? E_MOUSEBUTTONDOWN : E_MOUSEBUTTONUP, eventData);
 }
 
-void Input::SetKey(int key, int scancode, unsigned raw, bool newState)
+void Input::SetKey(int key, int scancode, bool newState)
 {
     bool repeat = false;
 
@@ -1423,7 +1758,6 @@ void Input::SetKey(int key, int scancode, unsigned raw, bool newState)
     VariantMap& eventData = GetEventDataMap();
     eventData[P_KEY] = key;
     eventData[P_SCANCODE] = scancode;
-    eventData[P_RAW] = raw;
     eventData[P_BUTTONS] = mouseButtonDown_;
     eventData[P_QUALIFIERS] = GetQualifiers();
     if (newState)
@@ -1456,7 +1790,30 @@ void Input::SetMousePosition(const IntVector2& position)
     if (!graphics_)
         return;
 
-    SDL_WarpMouseInWindow(graphics_->GetImpl()->GetWindow(), position.x_, position.y_);
+    SDL_WarpMouseInWindow(graphics_->GetWindow(), (int)(position.x_ / inputScale_.x_), (int)(position.y_ / inputScale_.y_));
+}
+
+void Input::CenterMousePosition()
+{
+    const IntVector2 center(graphics_->GetWidth() / 2, graphics_->GetHeight() / 2);
+    if (GetMousePosition() != center)
+    {
+        SetMousePosition(center);
+        lastMousePosition_ = center;
+    }
+}
+
+void Input::SuppressNextMouseMove()
+{
+    suppressNextMouseMove_ = true;
+    mouseMove_ = IntVector2::ZERO;
+}
+
+void Input::UnsuppressMouseMove()
+{
+    suppressNextMouseMove_ = false;
+    mouseMove_ = IntVector2::ZERO;
+    lastMousePosition_ = GetMousePosition();
 }
 
 void Input::HandleSDLEvent(void* sdlEvent)
@@ -1486,40 +1843,48 @@ void Input::HandleSDLEvent(void* sdlEvent)
             return;
     }
 
+    // Possibility for custom handling or suppression of default handling for the SDL event
+    {
+        using namespace SDLRawInput;
+
+        VariantMap eventData = GetEventDataMap();
+        eventData[P_SDLEVENT] = &evt;
+        eventData[P_CONSUMED] = false;
+        SendEvent(E_SDLRAWINPUT, eventData);
+
+        if (eventData[P_CONSUMED].GetBool())
+            return;
+    }
+
     switch (evt.type)
     {
     case SDL_KEYDOWN:
-        // Convert to uppercase to match Win32 virtual key codes
-#ifdef __EMSCRIPTEN__
-        SetKey(ConvertSDLKeyCode(evt.key.keysym.sym, evt.key.keysym.scancode), evt.key.keysym.scancode, 0, true);
-#else
-        SetKey(ConvertSDLKeyCode(evt.key.keysym.sym, evt.key.keysym.scancode), evt.key.keysym.scancode, evt.key.keysym.raw, true);
-#endif
+        SetKey(ConvertSDLKeyCode(evt.key.keysym.sym, evt.key.keysym.scancode), evt.key.keysym.scancode, true);
         break;
 
     case SDL_KEYUP:
-#ifdef __EMSCRIPTEN__
-        SetKey(ConvertSDLKeyCode(evt.key.keysym.sym, evt.key.keysym.scancode), evt.key.keysym.scancode, 0, false);
-#else
-        SetKey(ConvertSDLKeyCode(evt.key.keysym.sym, evt.key.keysym.scancode), evt.key.keysym.scancode, evt.key.keysym.raw, false);
-#endif
+        SetKey(ConvertSDLKeyCode(evt.key.keysym.sym, evt.key.keysym.scancode), evt.key.keysym.scancode, false);
         break;
 
     case SDL_TEXTINPUT:
         {
-            textInput_ = &evt.text.text[0];
-            unsigned unicode = textInput_.AtUTF8(0);
-            if (unicode)
-            {
-                using namespace TextInput;
+            using namespace TextInput;
 
-                VariantMap textInputEventData;
+            VariantMap textInputEventData;
+            textInputEventData[P_TEXT] = textInput_ = &evt.text.text[0];
+            SendEvent(E_TEXTINPUT, textInputEventData);
+        }
+        break;
 
-                textInputEventData[P_TEXT] = textInput_;
-                textInputEventData[P_BUTTONS] = mouseButtonDown_;
-                textInputEventData[P_QUALIFIERS] = GetQualifiers();
-                SendEvent(E_TEXTINPUT, textInputEventData);
-            }
+    case SDL_TEXTEDITING:
+        {
+            using namespace TextEditing;
+
+            VariantMap textEditingEventData;
+            textEditingEventData[P_COMPOSITION] = &evt.edit.text[0];
+            textEditingEventData[P_CURSOR] = evt.edit.start;
+            textEditingEventData[P_SELECTION_LENGTH] = evt.edit.length;
+            SendEvent(E_TEXTEDITING, textEditingEventData);
         }
         break;
 
@@ -1530,6 +1895,8 @@ void Input::HandleSDLEvent(void* sdlEvent)
         {
             int x, y;
             SDL_GetMouseState(&x, &y);
+            x = (int)(x * inputScale_.x_);
+            y = (int)(y * inputScale_.y_);
 
             SDL_Event event;
             event.type = SDL_FINGERDOWN;
@@ -1551,6 +1918,8 @@ void Input::HandleSDLEvent(void* sdlEvent)
         {
             int x, y;
             SDL_GetMouseState(&x, &y);
+            x = (int)(x * inputScale_.x_);
+            y = (int)(y * inputScale_.y_);
 
             SDL_Event event;
             event.type = SDL_FINGERUP;
@@ -1566,36 +1935,47 @@ void Input::HandleSDLEvent(void* sdlEvent)
         break;
 
     case SDL_MOUSEMOTION:
-        // Emscripten will use SDL mouse move events for relative mode, as repositioning the mouse and
-        // measuring distance from window center is not supported
 #ifndef __EMSCRIPTEN__
-        if ((mouseVisible_ || mouseMode_ == MM_FREE) && !touchEmulation_)
+        if ((sdlMouseRelative_ || mouseVisible_ || mouseMode_ == MM_FREE) && !touchEmulation_)
 #else
-        if ((mouseVisible_ || mouseMode_ == MM_RELATIVE || mouseMode_ == MM_FREE) && !touchEmulation_)
+        if ((mouseVisible_ || emscriptenPointerLock_ || mouseMode_ == MM_FREE) && !touchEmulation_)
 #endif
         {
+#ifdef __EMSCRIPTEN__
+            if (emscriptenExitingPointerLock_)
+            {
+                SuppressNextMouseMove();
+                break;
+            }
+#endif
+
+            // Accumulate without scaling for accuracy, needs to be scaled to backbuffer coordinates when asked
             mouseMove_.x_ += evt.motion.xrel;
             mouseMove_.y_ += evt.motion.yrel;
+            mouseMoveScaled_ = false;
 
-            using namespace MouseMove;
-
-            VariantMap& eventData = GetEventDataMap();
-            if (mouseVisible_)
+            if (!suppressNextMouseMove_)
             {
-                eventData[P_X] = evt.motion.x;
-                eventData[P_Y] = evt.motion.y;
+                using namespace MouseMove;
+
+                VariantMap& eventData = GetEventDataMap();
+                eventData[P_X] = (int)(evt.motion.x * inputScale_.x_);
+                eventData[P_Y] = (int)(evt.motion.y * inputScale_.y_);
+                // The "on-the-fly" motion data needs to be scaled now, though this may reduce accuracy
+                eventData[P_DX] = (int)(evt.motion.xrel * inputScale_.x_);
+                eventData[P_DY] = (int)(evt.motion.yrel * inputScale_.y_);
+                eventData[P_BUTTONS] = mouseButtonDown_;
+                eventData[P_QUALIFIERS] = GetQualifiers();
+                SendEvent(E_MOUSEMOVE, eventData);
             }
-            eventData[P_DX] = evt.motion.xrel;
-            eventData[P_DY] = evt.motion.yrel;
-            eventData[P_BUTTONS] = mouseButtonDown_;
-            eventData[P_QUALIFIERS] = GetQualifiers();
-            SendEvent(E_MOUSEMOVE, eventData);
         }
         // Only the left mouse button "finger" moves along with the mouse movement
         else if (touchEmulation_ && touches_.Contains(0))
         {
             int x, y;
             SDL_GetMouseState(&x, &y);
+            x = (int)(x * inputScale_.x_);
+            y = (int)(y * inputScale_.y_);
 
             SDL_Event event;
             event.type = SDL_FINGERMOTION;
@@ -1604,8 +1984,8 @@ void Input::HandleSDLEvent(void* sdlEvent)
             event.tfinger.pressure = 1.0f;
             event.tfinger.x = (float)x / (float)graphics_->GetWidth();
             event.tfinger.y = (float)y / (float)graphics_->GetHeight();
-            event.tfinger.dx = (float)evt.motion.xrel / (float)graphics_->GetWidth();
-            event.tfinger.dy = (float)evt.motion.yrel / (float)graphics_->GetHeight();
+            event.tfinger.dx = (float)evt.motion.xrel * inputScale_.x_ / (float)graphics_->GetWidth();
+            event.tfinger.dy = (float)evt.motion.yrel * inputScale_.y_ / (float)graphics_->GetHeight();
             SDL_PushEvent(&event);
         }
         break;
@@ -1621,12 +2001,8 @@ void Input::HandleSDLEvent(void* sdlEvent)
             int touchID = GetTouchIndexFromID(evt.tfinger.fingerId & 0x7ffffff);
             TouchState& state = touches_[touchID];
             state.touchID_ = touchID;
-#ifndef __EMSCRIPTEN__
             state.lastPosition_ = state.position_ = IntVector2((int)(evt.tfinger.x * graphics_->GetWidth()),
                 (int)(evt.tfinger.y * graphics_->GetHeight()));
-#else
-            state.position_ = IntVector2((int)(evt.tfinger.x), (int)(evt.tfinger.y));
-#endif
             state.delta_ = IntVector2::ZERO;
             state.pressure_ = evt.tfinger.pressure;
 
@@ -1641,7 +2017,7 @@ void Input::HandleSDLEvent(void* sdlEvent)
 
             // Finger touch may move the mouse cursor. Suppress next mouse move when cursor hidden to prevent jumps
             if (!mouseVisible_)
-                suppressNextMouseMove_ = true;
+                SuppressNextMouseMove();
         }
         break;
 
@@ -1677,12 +2053,8 @@ void Input::HandleSDLEvent(void* sdlEvent)
                 break;
             TouchState& state = touches_[touchID];
             state.touchID_ = touchID;
-#ifndef __EMSCRIPTEN__
             state.position_ = IntVector2((int)(evt.tfinger.x * graphics_->GetWidth()),
                 (int)(evt.tfinger.y * graphics_->GetHeight()));
-#else
-            state.position_ = IntVector2((int)(evt.tfinger.x), (int)(evt.tfinger.y));
-#endif
             state.delta_ = state.position_ - state.lastPosition_;
             state.pressure_ = evt.tfinger.pressure;
 
@@ -1692,19 +2064,14 @@ void Input::HandleSDLEvent(void* sdlEvent)
             eventData[P_TOUCHID] = touchID;
             eventData[P_X] = state.position_.x_;
             eventData[P_Y] = state.position_.y_;
-#ifndef __EMSCRIPTEN__
             eventData[P_DX] = (int)(evt.tfinger.dx * graphics_->GetWidth());
             eventData[P_DY] = (int)(evt.tfinger.dy * graphics_->GetHeight());
-#else
-            eventData[P_DX] = (int)(evt.tfinger.dx);
-            eventData[P_DY] = (int)(evt.tfinger.dy);
-#endif
             eventData[P_PRESSURE] = state.pressure_;
             SendEvent(E_TOUCHMOVE, eventData);
 
             // Finger touch may move the mouse cursor. Suppress next mouse move when cursor hidden to prevent jumps
             if (!mouseVisible_)
-                suppressNextMouseMove_ = true;
+                SuppressNextMouseMove();
         }
         break;
 
@@ -1937,29 +2304,20 @@ void Input::HandleSDLEvent(void* sdlEvent)
 
             case SDL_WINDOWEVENT_MAXIMIZED:
             case SDL_WINDOWEVENT_RESTORED:
+#if defined(IOS) || defined(TVOS) || defined (__ANDROID__)
+                // On iOS/tvOS we never lose the GL context, but may have done GPU object changes that could not be applied yet. Apply them now
+                // On Android the old GL context may be lost already, restore GPU objects to the new GL context
+                graphics_->Restore();
+#endif
                 minimized_ = false;
                 SendInputFocusEvent();
-#ifdef IOS
-                // On iOS we never lose the GL context, but may have done GPU object changes that could not be applied yet.
-                // Apply them now
-                graphics_->Restore();
-#endif
                 break;
-
-#ifdef ANDROID
-            case SDL_WINDOWEVENT_FOCUS_GAINED:
-                // Restore GPU objects to the new GL context
-                graphics_->Restore();
-                break;
-#endif
 
             case SDL_WINDOWEVENT_RESIZED:
-                inResize_ = true;
-                graphics_->WindowResized();
-                inResize_ = false;
+                graphics_->OnWindowResized();
                 break;
             case SDL_WINDOWEVENT_MOVED:
-                graphics_->WindowMoved();
+                graphics_->OnWindowMoved();
                 break;
 
             default: break;
@@ -1994,19 +2352,8 @@ void Input::HandleScreenMode(StringHash eventType, VariantMap& eventData)
 
     // Re-enable cursor clipping, and re-center the cursor (if needed) to the new screen size, so that there is no erroneous
     // mouse move event. Also get new window ID if it changed
-    SDL_Window* window = graphics_->GetImpl()->GetWindow();
+    SDL_Window* window = graphics_->GetWindow();
     windowID_ = SDL_GetWindowID(window);
-
-    // If screen mode happens due to mouse drag resize, do not recenter the mouse as that would lead to erratic window sizes
-    if (!mouseVisible_ && mouseMode_ != MM_FREE && !inResize_)
-    {
-        IntVector2 center(graphics_->GetWidth() / 2, graphics_->GetHeight() / 2);
-        SetMousePosition(center);
-        lastMousePosition_ = center;
-        focusedThisFrame_ = true;
-    }
-    else
-        lastMousePosition_ = GetMousePosition();
 
     // Resize screen joysticks to new screen size
     for (HashMap<SDL_JoystickID, JoystickState>::Iterator i = joysticks_.Begin(); i != joysticks_.End(); ++i)
@@ -2016,22 +2363,43 @@ void Input::HandleScreenMode(StringHash eventType, VariantMap& eventData)
             screenjoystick->SetSize(graphics_->GetWidth(), graphics_->GetHeight());
     }
 
-    if (graphics_->GetFullscreen())
+    if (graphics_->GetFullscreen() || !mouseVisible_)
         focusedThisFrame_ = true;
 
     // After setting a new screen mode we should not be minimized
     minimized_ = (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0;
 
-    // Remember that screen mode changed in case we lose focus (needed on Linux)
-    if (!inResize_)
-        screenModeChanged_ = true;
+    // Calculate input coordinate scaling from SDL window to backbuffer ratio
+    int winWidth, winHeight;
+    int gfxWidth = graphics_->GetWidth();
+    int gfxHeight = graphics_->GetHeight();
+    SDL_GetWindowSize(window, &winWidth, &winHeight);
+    if (winWidth > 0 && winHeight > 0 && gfxWidth > 0 && gfxHeight > 0)
+    {
+        inputScale_.x_ = (float)gfxWidth / (float)winWidth;
+        inputScale_.y_ = (float)gfxHeight / (float)winHeight;
+    }
+    else
+        inputScale_ = Vector2::ONE;
 }
 
 void Input::HandleBeginFrame(StringHash eventType, VariantMap& eventData)
 {
     // Update input right at the beginning of the frame
+    SendEvent(E_INPUTBEGIN);
     Update();
+    SendEvent(E_INPUTEND);
 }
+
+#ifdef __EMSCRIPTEN__
+void Input::HandleEndFrame(StringHash eventType, VariantMap& eventData)
+{
+    if (suppressNextMouseMove_ && mouseMove_ != IntVector2::ZERO)
+        UnsuppressMouseMove();
+
+    ResetInputAccumulation();
+}
+#endif
 
 void Input::HandleScreenJoystickTouch(StringHash eventType, VariantMap& eventData)
 {
@@ -2076,7 +2444,7 @@ void Input::HandleScreenJoystickTouch(StringHash eventType, VariantMap& eventDat
             if (!keyBindingVar.IsEmpty())
             {
                 evt.type = eventType == E_TOUCHBEGIN ? SDL_KEYDOWN : SDL_KEYUP;
-                evt.key.keysym.sym = keyBindingVar.GetInt();
+                evt.key.keysym.sym = ToLower(keyBindingVar.GetInt());
                 evt.key.keysym.scancode = SDL_SCANCODE_UNKNOWN;
             }
             if (!mouseButtonBindingVar.IsEmpty())
@@ -2119,7 +2487,7 @@ void Input::HandleScreenJoystickTouch(StringHash eventType, VariantMap& eventDat
         }
         else
         {
-            // Hat is binded by 4 integers representing keysyms for 'W', 'S', 'A', 'D' or something similar
+            // Hat is binded by 4 integers representing keysyms for 'w', 's', 'a', 'd' or something similar
             IntRect keyBinding = keyBindingVar.GetIntRect();
 
             if (eventType == E_TOUCHEND)

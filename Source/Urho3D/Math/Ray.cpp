@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -251,7 +251,7 @@ float Ray::HitDistance(const void* vertexData, unsigned vertexStride, unsigned v
     const unsigned char* vertices = ((const unsigned char*)vertexData) + vertexStart * vertexStride;
     unsigned index = 0, nearestIdx = M_MAX_UNSIGNED;
     Vector3 barycentric;
-    Vector3* outBary = outUV ? &barycentric : 0;
+    Vector3* outBary = outUV ? &barycentric : nullptr;
 
     while (index + 2 < vertexCount)
     {
@@ -291,14 +291,14 @@ float Ray::HitDistance(const void* vertexData, unsigned vertexStride, const void
     float nearest = M_INFINITY;
     const unsigned char* vertices = (const unsigned char*)vertexData;
     Vector3 barycentric;
-    Vector3* outBary = outUV ? &barycentric : 0;
+    Vector3* outBary = outUV ? &barycentric : nullptr;
 
     // 16-bit indices
     if (indexSize == sizeof(unsigned short))
     {
         const unsigned short* indices = ((const unsigned short*)indexData) + indexStart;
         const unsigned short* indicesEnd = indices + indexCount;
-        const unsigned short* nearestIndices = 0;
+        const unsigned short* nearestIndices = nullptr;
 
         while (indices < indicesEnd)
         {
@@ -316,7 +316,7 @@ float Ray::HitDistance(const void* vertexData, unsigned vertexStride, const void
 
         if (outUV)
         {
-            if (nearestIndices == 0)
+            if (nearestIndices == nullptr)
                 *outUV = Vector2::ZERO;
             else
             {
@@ -334,7 +334,7 @@ float Ray::HitDistance(const void* vertexData, unsigned vertexStride, const void
     {
         const unsigned* indices = ((const unsigned*)indexData) + indexStart;
         const unsigned* indicesEnd = indices + indexCount;
-        const unsigned* nearestIndices = 0;
+        const unsigned* nearestIndices = nullptr;
 
         while (indices < indicesEnd)
         {
@@ -352,7 +352,7 @@ float Ray::HitDistance(const void* vertexData, unsigned vertexStride, const void
 
         if (outUV)
         {
-            if (nearestIndices == 0)
+            if (nearestIndices == nullptr)
                 *outUV = Vector2::ZERO;
             else
             {
@@ -392,7 +392,7 @@ bool Ray::InsideGeometry(const void* vertexData, unsigned vertexSize, unsigned v
 
     // If the closest face is a backface, that means that the ray originates from the inside of the geometry
     // NOTE: there may be cases where both are equal, as in, no collision to either. This is prevented in the most likely case
-    // (ray doesnt hit either) by this conditional
+    // (ray doesn't hit either) by this conditional
     if (currentFrontFace != M_INFINITY || currentBackFace != M_INFINITY)
         return currentBackFace < currentFrontFace;
 

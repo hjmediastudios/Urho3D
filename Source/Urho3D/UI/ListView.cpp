@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -41,7 +41,7 @@ static const char* highlightModes[] =
     "Never",
     "Focus",
     "Always",
-    0
+    nullptr
 };
 
 static const StringHash expandedHash("Expanded");
@@ -99,7 +99,7 @@ public:
         for (unsigned i = 0; i < children_.Size(); ++i)
         {
             const IntVector2& position = children_[i]->GetPosition();
-            CheckBox* overlay = static_cast<CheckBox*>(overlayContainer_->GetChild(i));
+            CheckBox* overlay = overlayContainer_->GetChildStaticCast<CheckBox>(i);
             bool visible = children_[i]->IsVisible() && GetItemHierarchyParent(children_[i]);
             overlay->SetVisible(visible);
             if (visible)
@@ -314,13 +314,34 @@ void ListView::OnKey(int key, int buttons, int qualifiers)
     SendEvent(E_UNHANDLEDKEY, eventData);
 }
 
-void ListView::OnResize()
+void ListView::OnResize(const IntVector2& newSize, const IntVector2& delta)
 {
-    ScrollView::OnResize();
+    ScrollView::OnResize(newSize, delta);
 
     // When in hierarchy mode also need to resize the overlay container
     if (hierarchyMode_)
         overlayContainer_->SetSize(scrollPanel_->GetSize());
+}
+
+void ListView::UpdateInternalLayout()
+{
+    if (overlayContainer_)
+        overlayContainer_->UpdateLayout();
+    contentElement_->UpdateLayout();
+}
+
+void ListView::DisableInternalLayoutUpdate()
+{
+    if (overlayContainer_)
+        overlayContainer_->DisableLayoutUpdate();
+    contentElement_->DisableLayoutUpdate();
+}
+
+void ListView::EnableInternalLayoutUpdate()
+{
+    if (overlayContainer_)
+        overlayContainer_->EnableLayoutUpdate();
+    contentElement_->EnableLayoutUpdate();
 }
 
 void ListView::AddItem(UIElement* item)

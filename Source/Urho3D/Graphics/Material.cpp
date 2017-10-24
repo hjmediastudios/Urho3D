@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,8 +27,10 @@
 #include "../Core/Profiler.h"
 #include "../Graphics/Graphics.h"
 #include "../Graphics/Material.h"
+#include "../Graphics/Renderer.h"
 #include "../Graphics/Technique.h"
 #include "../Graphics/Texture2D.h"
+#include "../Graphics/Texture2DArray.h"
 #include "../Graphics/Texture3D.h"
 #include "../Graphics/TextureCube.h"
 #include "../IO/FileSystem.h"
@@ -67,7 +69,7 @@ static const char* textureUnitNames[] =
     "depth",
     "light",
     "zone",
-    0
+    nullptr
 #else
     "lightramp",
     "lightshape",
@@ -76,12 +78,12 @@ static const char* textureUnitNames[] =
 #endif
 };
 
-static const char* cullModeNames[] =
+const char* cullModeNames[] =
 {
     "none",
     "ccw",
     "cw",
-    0
+    nullptr
 };
 
 static const char* fillModeNames[] =
@@ -89,7 +91,7 @@ static const char* fillModeNames[] =
     "solid",
     "wireframe",
     "point",
-    0
+    nullptr
 };
 
 TextureUnit ParseTextureUnitName(String name)
@@ -121,6 +123,38 @@ TextureUnit ParseTextureUnitName(String name)
     return unit;
 }
 
+StringHash ParseTextureTypeName(String name)
+{
+    name = name.ToLower().Trimmed();
+
+    if (name == "texture")
+        return Texture2D::GetTypeStatic();
+    else if (name == "cubemap")
+        return TextureCube::GetTypeStatic();
+    else if (name == "texture3d")
+        return Texture3D::GetTypeStatic();
+    else if (name == "texturearray")
+        return Texture2DArray::GetTypeStatic();
+
+    return nullptr;
+}
+
+StringHash ParseTextureTypeXml(ResourceCache* cache, String filename)
+{
+    StringHash type = nullptr;
+    if (!cache)
+        return type;
+
+    SharedPtr<File> texXmlFile = cache->GetFile(filename, false);
+    if (texXmlFile.NotNull())
+    {
+        SharedPtr<XMLFile> texXml(new XMLFile(cache->GetContext()));
+        if (texXml->Load(*texXmlFile))
+            type = ParseTextureTypeName(texXml->GetRoot().GetName());
+    }
+    return type;
+}
+
 static TechniqueEntry noEntry;
 
 bool CompareTechniqueEntries(const TechniqueEntry& lhs, const TechniqueEntry& rhs)
@@ -139,6 +173,7 @@ TechniqueEntry::TechniqueEntry() :
 
 TechniqueEntry::TechniqueEntry(Technique* tech, unsigned qualityLevel, float lodDistance) :
     technique_(tech),
+    original_(tech),
     qualityLevel_(qualityLevel),
     lodDistance_(lodDistance)
 {
@@ -174,6 +209,8 @@ Material::Material(Context* context) :
     Resource(context),
     auxViewFrameNumber_(0),
     shaderParameterHash_(0),
+    alphaToCoverage_(false),
+    lineAntiAlias_(false),
     occlusion_(true),
     specular_(false),
     subscribed_(false),
@@ -275,16 +312,22 @@ bool Material::BeginLoadXML(Deserializer& source)
             while (textureElem)
             {
                 String name = textureElem.GetAttribute("name");
-                // Detect cube maps by file extension: they are defined by an XML file
-                /// \todo Differentiate with 3D textures by actually reading the XML content
+                // Detect cube maps and arrays by file extension: they are defined by an XML file
                 if (GetExtension(name) == ".xml")
                 {
 #ifdef DESKTOP_GRAPHICS
-                    TextureUnit unit = TU_DIFFUSE;
-                    if (textureElem.HasAttribute("unit"))
-                        unit = ParseTextureUnitName(textureElem.GetAttribute("unit"));
-                    if (unit == TU_VOLUMEMAP)
+                    StringHash type = ParseTextureTypeXml(cache, name);
+                    if (!type && textureElem.HasAttribute("unit"))
+                    {
+                        TextureUnit unit = ParseTextureUnitName(textureElem.GetAttribute("unit"));
+                        if (unit == TU_VOLUMEMAP)
+                            type = Texture3D::GetTypeStatic();
+                    }
+
+                    if (type == Texture3D::GetTypeStatic())
                         cache->BackgroundLoadResource<Texture3D>(name, true, this);
+                    else if (type == Texture2DArray::GetTypeStatic())
+                        cache->BackgroundLoadResource<Texture2DArray>(name, true, this);
                     else
 #endif
                         cache->BackgroundLoadResource<TextureCube>(name, true, this);
@@ -330,18 +373,24 @@ bool Material::BeginLoadJSON(Deserializer& source)
             {
                 String unitString = it->first_;
                 String name = it->second_.GetString();
-                // Detect cube maps by file extension: they are defined by an XML file
-                /// \todo Differentiate with 3D textures by actually reading the XML content
+                // Detect cube maps and arrays by file extension: they are defined by an XML file
                 if (GetExtension(name) == ".xml")
                 {
-    #ifdef DESKTOP_GRAPHICS
-                    TextureUnit unit = TU_DIFFUSE;
-                    unit = ParseTextureUnitName(unitString);
+#ifdef DESKTOP_GRAPHICS
+                    StringHash type = ParseTextureTypeXml(cache, name);
+                    if (!type && !unitString.Empty())
+                    {
+                        TextureUnit unit = ParseTextureUnitName(unitString);
+                        if (unit == TU_VOLUMEMAP)
+                            type = Texture3D::GetTypeStatic();
+                    }
 
-                    if (unit == TU_VOLUMEMAP)
+                    if (type == Texture3D::GetTypeStatic())
                         cache->BackgroundLoadResource<Texture3D>(name, true, this);
+                    else if (type == Texture2DArray::GetTypeStatic())
+                        cache->BackgroundLoadResource<Texture2DArray>(name, true, this);
                     else
-    #endif
+#endif
                         cache->BackgroundLoadResource<TextureCube>(name, true, this);
                 }
                 else
@@ -377,6 +426,13 @@ bool Material::Load(const XMLElement& source)
 
     ResourceCache* cache = GetSubsystem<ResourceCache>();
 
+    XMLElement shaderElem = source.GetChild("shader");
+    if (shaderElem)
+    {
+        vertexShaderDefines_ = shaderElem.GetAttribute("vsdefines");
+        pixelShaderDefines_ = shaderElem.GetAttribute("psdefines");
+    }
+
     XMLElement techniqueElem = source.GetChild("technique");
     techniques_.Clear();
 
@@ -386,7 +442,7 @@ bool Material::Load(const XMLElement& source)
         if (tech)
         {
             TechniqueEntry newTechnique;
-            newTechnique.technique_ = tech;
+            newTechnique.technique_ = newTechnique.original_ = tech;
             if (techniqueElem.HasAttribute("quality"))
                 newTechnique.qualityLevel_ = techniqueElem.GetInt("quality");
             if (techniqueElem.HasAttribute("loddistance"))
@@ -398,6 +454,7 @@ bool Material::Load(const XMLElement& source)
     }
 
     SortTechniques();
+    ApplyShaderDefines();
 
     XMLElement textureElem = source.GetChild("texture");
     while (textureElem)
@@ -408,13 +465,18 @@ bool Material::Load(const XMLElement& source)
         if (unit < MAX_TEXTURE_UNITS)
         {
             String name = textureElem.GetAttribute("name");
-            // Detect cube maps by file extension: they are defined by an XML file
-            /// \todo Differentiate with 3D textures by actually reading the XML content
+            // Detect cube maps and arrays by file extension: they are defined by an XML file
             if (GetExtension(name) == ".xml")
             {
 #ifdef DESKTOP_GRAPHICS
-                if (unit == TU_VOLUMEMAP)
+                StringHash type = ParseTextureTypeXml(cache, name);
+                if (!type && unit == TU_VOLUMEMAP)
+                    type = Texture3D::GetTypeStatic();
+
+                if (type == Texture3D::GetTypeStatic())
                     SetTexture(unit, cache->GetResource<Texture3D>(name));
+                else if (type == Texture2DArray::GetTypeStatic())
+                    SetTexture(unit, cache->GetResource<Texture2DArray>(name));
                 else
 #endif
                     SetTexture(unit, cache->GetResource<TextureCube>(name));
@@ -482,13 +544,24 @@ bool Material::Load(const XMLElement& source)
     if (depthBiasElem)
         SetDepthBias(BiasParameters(depthBiasElem.GetFloat("constant"), depthBiasElem.GetFloat("slopescaled")));
 
+    XMLElement alphaToCoverageElem = source.GetChild("alphatocoverage");
+    if (alphaToCoverageElem)
+        SetAlphaToCoverage(alphaToCoverageElem.GetBool("enable"));
+
+    XMLElement lineAntiAliasElem = source.GetChild("lineantialias");
+    if (lineAntiAliasElem)
+        SetLineAntiAlias(lineAntiAliasElem.GetBool("enable"));
+
     XMLElement renderOrderElem = source.GetChild("renderorder");
     if (renderOrderElem)
         SetRenderOrder((unsigned char)renderOrderElem.GetUInt("value"));
 
+    XMLElement occlusionElem = source.GetChild("occlusion");
+    if (occlusionElem)
+        SetOcclusion(occlusionElem.GetBool("enable"));
+
     RefreshShaderParameterHash();
     RefreshMemoryUse();
-    CheckOcclusion();
     return true;
 }
 
@@ -504,6 +577,13 @@ bool Material::Load(const JSONValue& source)
 
     ResourceCache* cache = GetSubsystem<ResourceCache>();
 
+    const JSONValue& shaderVal = source.Get("shader");
+    if (!shaderVal.IsNull())
+    {
+        vertexShaderDefines_ = shaderVal.Get("vsdefines").GetString();
+        pixelShaderDefines_ = shaderVal.Get("psdefines").GetString();
+    }
+
     // Load techniques
     JSONArray techniquesArray = source.Get("techniques").GetArray();
     techniques_.Clear();
@@ -516,7 +596,7 @@ bool Material::Load(const JSONValue& source)
         if (tech)
         {
             TechniqueEntry newTechnique;
-            newTechnique.technique_ = tech;
+            newTechnique.technique_ = newTechnique.original_ = tech;
             JSONValue qualityVal = techVal.Get("quality");
             if (!qualityVal.IsNull())
                 newTechnique.qualityLevel_ = qualityVal.GetInt();
@@ -528,6 +608,7 @@ bool Material::Load(const JSONValue& source)
     }
 
     SortTechniques();
+    ApplyShaderDefines();
 
     // Load textures
     JSONObject textureObject = source.Get("textures").GetObject();
@@ -541,13 +622,18 @@ bool Material::Load(const JSONValue& source)
 
         if (unit < MAX_TEXTURE_UNITS)
         {
-            // Detect cube maps by file extension: they are defined by an XML file
-            /// \todo Differentiate with 3D textures by actually reading the XML content
+            // Detect cube maps and arrays by file extension: they are defined by an XML file
             if (GetExtension(textureName) == ".xml")
             {
 #ifdef DESKTOP_GRAPHICS
-                if (unit == TU_VOLUMEMAP)
+                StringHash type = ParseTextureTypeXml(cache, textureName);
+                if (!type && unit == TU_VOLUMEMAP)
+                    type = Texture3D::GetTypeStatic();
+
+                if (type == Texture3D::GetTypeStatic())
                     SetTexture(unit, cache->GetResource<Texture3D>(textureName));
+                else if (type == Texture2DArray::GetTypeStatic())
+                    SetTexture(unit, cache->GetResource<Texture2DArray>(textureName));
                 else
 #endif
                     SetTexture(unit, cache->GetResource<TextureCube>(textureName));
@@ -574,7 +660,7 @@ bool Material::Load(const JSONValue& source)
     }
     batchedParameterUpdate_ = false;
 
-    // Load shader parameter animationss
+    // Load shader parameter animations
     JSONObject paramAnimationsObject = source.Get("shaderParameterAnimations").GetObject();
     for (JSONObject::ConstIterator it = paramAnimationsObject.Begin(); it != paramAnimationsObject.End(); it++)
     {
@@ -619,13 +705,24 @@ bool Material::Load(const JSONValue& source)
     if (!depthBiasVal.IsNull())
         SetDepthBias(BiasParameters(depthBiasVal.Get("constant").GetFloat(), depthBiasVal.Get("slopescaled").GetFloat()));
 
+    JSONValue alphaToCoverageVal = source.Get("alphatocoverage");
+    if (!alphaToCoverageVal.IsNull())
+        SetAlphaToCoverage(alphaToCoverageVal.GetBool());
+
+    JSONValue lineAntiAliasVal = source.Get("lineantialias");
+    if (!lineAntiAliasVal.IsNull())
+        SetLineAntiAlias(lineAntiAliasVal.GetBool());
+
     JSONValue renderOrderVal = source.Get("renderorder");
     if (!renderOrderVal.IsNull())
-        SetRenderOrder((unsigned char)renderOrderVal.Get("value").GetUInt());
+        SetRenderOrder((unsigned char)renderOrderVal.GetUInt());
+
+    JSONValue occlusionVal = source.Get("occlusion");
+    if (!occlusionVal.IsNull())
+        SetOcclusion(occlusionVal.GetBool());
 
     RefreshShaderParameterHash();
     RefreshMemoryUse();
-    CheckOcclusion();
     return true;
 }
 
@@ -662,13 +759,23 @@ bool Material::Save(XMLElement& dest) const
         }
     }
 
+    // Write shader compile defines
+    if (!vertexShaderDefines_.Empty() || !pixelShaderDefines_.Empty())
+    {
+        XMLElement shaderElem = dest.CreateChild("shader");
+        if (!vertexShaderDefines_.Empty())
+            shaderElem.SetString("vsdefines", vertexShaderDefines_);
+        if (!pixelShaderDefines_.Empty())
+            shaderElem.SetString("psdefines", pixelShaderDefines_);
+    }
+
     // Write shader parameters
     for (HashMap<StringHash, MaterialShaderParameter>::ConstIterator j = shaderParameters_.Begin();
          j != shaderParameters_.End(); ++j)
     {
         XMLElement parameterElem = dest.CreateChild("parameter");
         parameterElem.SetString("name", j->second_.name_);
-        if (j->second_.value_.GetType() != VAR_BUFFER)
+        if (j->second_.value_.GetType() != VAR_BUFFER && j->second_.value_.GetType() != VAR_INT && j->second_.value_.GetType() != VAR_BOOL)
             parameterElem.SetVectorVariant("value", j->second_.value_);
         else
         {
@@ -707,9 +814,21 @@ bool Material::Save(XMLElement& dest) const
     depthBiasElem.SetFloat("constant", depthBias_.constantBias_);
     depthBiasElem.SetFloat("slopescaled", depthBias_.slopeScaledBias_);
 
+    // Write alpha-to-coverage
+    XMLElement alphaToCoverageElem = dest.CreateChild("alphatocoverage");
+    alphaToCoverageElem.SetBool("enable", alphaToCoverage_);
+
+    // Write line anti-alias
+    XMLElement lineAntiAliasElem = dest.CreateChild("lineantialias");
+    lineAntiAliasElem.SetBool("enable", lineAntiAlias_);
+
     // Write render order
     XMLElement renderOrderElem = dest.CreateChild("renderorder");
     renderOrderElem.SetUInt("value", renderOrder_);
+
+    // Write occlusion
+    XMLElement occlusionElem = dest.CreateChild("occlusion");
+    occlusionElem.SetBool("enable", occlusion_);
 
     return true;
 }
@@ -743,12 +862,23 @@ bool Material::Save(JSONValue& dest) const
     }
     dest.Set("textures", texturesValue);
 
+    // Write shader compile defines
+    if (!vertexShaderDefines_.Empty() || !pixelShaderDefines_.Empty())
+    {
+        JSONValue shaderVal;
+        if (!vertexShaderDefines_.Empty())
+            shaderVal.Set("vsdefines", vertexShaderDefines_);
+        if (!pixelShaderDefines_.Empty())
+            shaderVal.Set("psdefines", pixelShaderDefines_);
+        dest.Set("shader", shaderVal);
+    }
+
     // Write shader parameters
     JSONValue shaderParamsVal;
     for (HashMap<StringHash, MaterialShaderParameter>::ConstIterator j = shaderParameters_.Begin();
          j != shaderParameters_.End(); ++j)
     {
-        if (j->second_.value_.GetType() != VAR_BUFFER)
+        if (j->second_.value_.GetType() != VAR_BUFFER && j->second_.value_.GetType() != VAR_INT && j->second_.value_.GetType() != VAR_BOOL)
             shaderParamsVal.Set(j->second_.name_, j->second_.value_.ToString());
         else
         {
@@ -787,9 +917,19 @@ bool Material::Save(JSONValue& dest) const
     JSONValue depthBiasValue;
     depthBiasValue.Set("constant", depthBias_.constantBias_);
     depthBiasValue.Set("slopescaled", depthBias_.slopeScaledBias_);
+    dest.Set("depthbias", depthBiasValue);
+
+    // Write alpha-to-coverage
+    dest.Set("alphatocoverage", alphaToCoverage_);
+
+    // Write line anti-alias
+    dest.Set("lineantialias", lineAntiAlias_);
 
     // Write render order
     dest.Set("renderorder", (unsigned) renderOrder_);
+
+    // Write occlusion
+    dest.Set("occlusion", occlusion_);
 
     return true;
 }
@@ -809,7 +949,25 @@ void Material::SetTechnique(unsigned index, Technique* tech, unsigned qualityLev
         return;
 
     techniques_[index] = TechniqueEntry(tech, qualityLevel, lodDistance);
-    CheckOcclusion();
+    ApplyShaderDefines(index);
+}
+
+void Material::SetVertexShaderDefines(const String& defines)
+{
+    if (defines != vertexShaderDefines_)
+    {
+        vertexShaderDefines_ = defines;
+        ApplyShaderDefines();
+    }
+}
+
+void Material::SetPixelShaderDefines(const String& defines)
+{
+    if (defines != pixelShaderDefines_)
+    {
+        pixelShaderDefines_ = defines;
+        ApplyShaderDefines();
+    }
 }
 
 void Material::SetShaderParameter(const String& name, const Variant& value)
@@ -817,6 +975,7 @@ void Material::SetShaderParameter(const String& name, const Variant& value)
     MaterialShaderParameter newParam;
     newParam.name_ = name;
     newParam.value_ = value;
+
     StringHash nameHash(name);
     shaderParameters_[nameHash] = newParam;
 
@@ -906,8 +1065,6 @@ void Material::SetUVTransform(const Vector2& offset, float rotation, const Vecto
     Matrix3x4 transform(Matrix3x4::IDENTITY);
     transform.m00_ = repeat.x_;
     transform.m11_ = repeat.y_;
-    transform.m03_ = -0.5f * transform.m00_ + 0.5f;
-    transform.m13_ = -0.5f * transform.m11_ + 0.5f;
 
     Matrix3x4 rotationMatrix(Matrix3x4::IDENTITY);
     rotationMatrix.m00_ = Cos(rotation);
@@ -917,7 +1074,7 @@ void Material::SetUVTransform(const Vector2& offset, float rotation, const Vecto
     rotationMatrix.m03_ = 0.5f - 0.5f * (rotationMatrix.m00_ + rotationMatrix.m01_);
     rotationMatrix.m13_ = 0.5f - 0.5f * (rotationMatrix.m10_ + rotationMatrix.m11_);
 
-    transform = rotationMatrix * transform;
+    transform = transform * rotationMatrix;
 
     Matrix3x4 offsetMatrix = Matrix3x4::IDENTITY;
     offsetMatrix.m03_ = offset.x_;
@@ -955,9 +1112,24 @@ void Material::SetDepthBias(const BiasParameters& parameters)
     depthBias_.Validate();
 }
 
+void Material::SetAlphaToCoverage(bool enable)
+{
+    alphaToCoverage_ = enable;
+}
+
+void Material::SetLineAntiAlias(bool enable)
+{
+    lineAntiAlias_ = enable;
+}
+
 void Material::SetRenderOrder(unsigned char order)
 {
     renderOrder_ = order;
+}
+
+void Material::SetOcclusion(bool enable)
+{
+    occlusion_ = enable;
 }
 
 void Material::SetScene(Scene* scene)
@@ -997,8 +1169,14 @@ SharedPtr<Material> Material::Clone(const String& cloneName) const
 
     ret->SetName(cloneName);
     ret->techniques_ = techniques_;
+    ret->vertexShaderDefines_ = vertexShaderDefines_;
+    ret->pixelShaderDefines_ = pixelShaderDefines_;
     ret->shaderParameters_ = shaderParameters_;
+    ret->shaderParameterHash_ = shaderParameterHash_;
     ret->textures_ = textures_;
+    ret->depthBias_ = depthBias_;
+    ret->alphaToCoverage_ = alphaToCoverage_;
+    ret->lineAntiAlias_ = lineAntiAlias_;
     ret->occlusion_ = occlusion_;
     ret->specular_ = specular_;
     ret->cullMode_ = cullMode_;
@@ -1027,19 +1205,19 @@ const TechniqueEntry& Material::GetTechniqueEntry(unsigned index) const
 
 Technique* Material::GetTechnique(unsigned index) const
 {
-    return index < techniques_.Size() ? techniques_[index].technique_ : (Technique*)0;
+    return index < techniques_.Size() ? techniques_[index].technique_ : nullptr;
 }
 
 Pass* Material::GetPass(unsigned index, const String& passName) const
 {
-    Technique* tech = index < techniques_.Size() ? techniques_[index].technique_ : (Technique*)0;
-    return tech ? tech->GetPass(passName) : 0;
+    Technique* tech = index < techniques_.Size() ? techniques_[index].technique_ : nullptr;
+    return tech ? tech->GetPass(passName) : nullptr;
 }
 
 Texture* Material::GetTexture(TextureUnit unit) const
 {
     HashMap<TextureUnit, SharedPtr<Texture> >::ConstIterator i = textures_.Find(unit);
-    return i != textures_.End() ? i->second_.Get() : (Texture*)0;
+    return i != textures_.End() ? i->second_.Get() : nullptr;
 }
 
 const Variant& Material::GetShaderParameter(const String& name) const
@@ -1051,19 +1229,19 @@ const Variant& Material::GetShaderParameter(const String& name) const
 ValueAnimation* Material::GetShaderParameterAnimation(const String& name) const
 {
     ShaderParameterAnimationInfo* info = GetShaderParameterAnimationInfo(name);
-    return info == 0 ? 0 : info->GetAnimation();
+    return info == nullptr ? nullptr : info->GetAnimation();
 }
 
 WrapMode Material::GetShaderParameterAnimationWrapMode(const String& name) const
 {
     ShaderParameterAnimationInfo* info = GetShaderParameterAnimationInfo(name);
-    return info == 0 ? WM_LOOP : info->GetWrapMode();
+    return info == nullptr ? WM_LOOP : info->GetWrapMode();
 }
 
 float Material::GetShaderParameterAnimationSpeed(const String& name) const
 {
     ShaderParameterAnimationInfo* info = GetShaderParameterAnimationInfo(name);
-    return info == 0 ? 0 : info->GetSpeed();
+    return info == nullptr ? 0 : info->GetSpeed();
 }
 
 Scene* Material::GetScene() const
@@ -1085,30 +1263,19 @@ Variant Material::ParseShaderParameterValue(const String& value)
         return ToVectorVariant(valueTrimmed);
 }
 
-void Material::CheckOcclusion()
-{
-    // Determine occlusion by checking the base pass of each technique
-    occlusion_ = false;
-    for (unsigned i = 0; i < techniques_.Size(); ++i)
-    {
-        Technique* tech = techniques_[i].technique_;
-        if (tech)
-        {
-            Pass* pass = tech->GetPass("base");
-            if (pass && pass->GetDepthWrite() && !pass->GetAlphaMask())
-                occlusion_ = true;
-        }
-    }
-}
-
 void Material::ResetToDefaults()
 {
     // Needs to be a no-op when async loading, as this does a GetResource() which is not allowed from worker threads
     if (!Thread::IsMainThread())
         return;
 
+    vertexShaderDefines_.Clear();
+    pixelShaderDefines_.Clear();
+
     SetNumTechniques(1);
-    SetTechnique(0, GetSubsystem<ResourceCache>()->GetResource<Technique>("Techniques/NoTexture.xml"));
+    Renderer* renderer = GetSubsystem<Renderer>();
+    SetTechnique(0, renderer ? renderer->GetDefaultTechnique() :
+        GetSubsystem<ResourceCache>()->GetResource<Technique>("Techniques/NoTexture.xml"));
 
     textures_.Clear();
 
@@ -1120,6 +1287,8 @@ void Material::ResetToDefaults()
     SetShaderParameter("MatEmissiveColor", Vector3::ZERO);
     SetShaderParameter("MatEnvMapColor", Vector3::ONE);
     SetShaderParameter("MatSpecColor", Vector4(0.0f, 0.0f, 0.0f, 1.0f));
+    SetShaderParameter("Roughness", 0.5f);
+    SetShaderParameter("Metallic", 0.0f);
     batchedParameterUpdate_ = false;
 
     cullMode_ = CULL_CCW;
@@ -1127,6 +1296,7 @@ void Material::ResetToDefaults()
     fillMode_ = FILL_SOLID;
     depthBias_ = BiasParameters(0.0f, 0.0f);
     renderOrder_ = DEFAULT_RENDER_ORDER;
+    occlusion_ = true;
 
     RefreshShaderParameterHash();
     RefreshMemoryUse();
@@ -1165,7 +1335,7 @@ ShaderParameterAnimationInfo* Material::GetShaderParameterAnimationInfo(const St
     StringHash nameHash(name);
     HashMap<StringHash, SharedPtr<ShaderParameterAnimationInfo> >::ConstIterator i = shaderParameterAnimationInfos_.Find(nameHash);
     if (i == shaderParameterAnimationInfos_.End())
-        return 0;
+        return nullptr;
     return i->second_;
 }
 
@@ -1179,7 +1349,7 @@ void Material::UpdateEventSubscription()
             SubscribeToEvent(E_UPDATE, URHO3D_HANDLER(Material, HandleAttributeAnimationUpdate));
         subscribed_ = true;
     }
-    else if (subscribed_)
+    else if (subscribed_ && shaderParameterAnimationInfos_.Empty())
     {
         UnsubscribeFromEvent(E_UPDATE);
         UnsubscribeFromEvent(E_ATTRIBUTEANIMATIONUPDATE);
@@ -1192,17 +1362,43 @@ void Material::HandleAttributeAnimationUpdate(StringHash eventType, VariantMap& 
     // Timestep parameter is same no matter what event is being listened to
     float timeStep = eventData[Update::P_TIMESTEP].GetFloat();
 
+    // Keep weak pointer to self to check for destruction caused by event handling
+    WeakPtr<Object> self(this);
+
     Vector<String> finishedNames;
     for (HashMap<StringHash, SharedPtr<ShaderParameterAnimationInfo> >::ConstIterator i = shaderParameterAnimationInfos_.Begin();
          i != shaderParameterAnimationInfos_.End(); ++i)
     {
-        if (i->second_->Update(timeStep))
+        bool finished = i->second_->Update(timeStep);
+        // If self deleted as a result of an event sent during animation playback, nothing more to do
+        if (self.Expired())
+            return;
+
+        if (finished)
             finishedNames.Push(i->second_->GetName());
     }
 
     // Remove finished animations
     for (unsigned i = 0; i < finishedNames.Size(); ++i)
-        SetShaderParameterAnimation(finishedNames[i], 0);
+        SetShaderParameterAnimation(finishedNames[i], nullptr);
+}
+
+void Material::ApplyShaderDefines(unsigned index)
+{
+    if (index == M_MAX_UNSIGNED)
+    {
+        for (unsigned i = 0; i < techniques_.Size(); ++i)
+            ApplyShaderDefines(i);
+        return;
+    }
+
+    if (index >= techniques_.Size() || !techniques_[index].original_)
+        return;
+
+    if (vertexShaderDefines_.Empty() && pixelShaderDefines_.Empty())
+        techniques_[index].technique_ = techniques_[index].original_;
+    else
+        techniques_[index].technique_ = techniques_[index].original_->CloneWithDefines(vertexShaderDefines_, pixelShaderDefines_);
 }
 
 }

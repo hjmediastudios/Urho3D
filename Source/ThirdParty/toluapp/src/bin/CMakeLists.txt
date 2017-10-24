@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2008-2015 the Urho3D project.
+# Copyright (c) 2008-2017 the Urho3D project.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -21,20 +21,19 @@
 #
 
 if (NOT CMAKE_PROJECT_NAME STREQUAL Urho3D)
-    # Set CMake minimum version and CMake policy required by Urho3D-CMake-common module
-    cmake_minimum_required (VERSION 2.8.6)
+    # Set CMake minimum version and CMake policy required by UrhoCommon module
+    cmake_minimum_required (VERSION 3.2.3)
     if (COMMAND cmake_policy)
+        # Libraries linked via full path no longer produce linker search paths
         cmake_policy (SET CMP0003 NEW)
-        if (CMAKE_VERSION VERSION_GREATER 2.8.12 OR CMAKE_VERSION VERSION_EQUAL 2.8.12)
-            # INTERFACE_LINK_LIBRARIES defines the link interface
-            cmake_policy (SET CMP0022 NEW)
-        endif ()
-        if (CMAKE_VERSION VERSION_GREATER 3.0.0 OR CMAKE_VERSION VERSION_EQUAL 3.0.0)
-            # Disallow use of the LOCATION target property - therefore we set to OLD as we still need it
-            cmake_policy (SET CMP0026 OLD)
-            # MACOSX_RPATH is enabled by default
-            cmake_policy (SET CMP0042 NEW)
-        endif ()
+        # INTERFACE_LINK_LIBRARIES defines the link interface
+        cmake_policy (SET CMP0022 NEW)
+        # Disallow use of the LOCATION target property - so we set to OLD as we still need it
+        cmake_policy (SET CMP0026 OLD)
+        # MACOSX_RPATH is enabled by default
+        cmake_policy (SET CMP0042 NEW)
+        # Honor the visibility properties for SHARED target types only
+        cmake_policy (SET CMP0063 OLD)
     endif ()
 
     # Set project name
@@ -43,11 +42,16 @@ if (NOT CMAKE_PROJECT_NAME STREQUAL Urho3D)
     # Set CMake modules search path
     set (CMAKE_MODULE_PATH ${BAKED_CMAKE_SOURCE_DIR}/CMake/Modules)
 
-    # Include Urho3D Cmake common module
-    include (Urho3D-CMake-common)
+    # Include UrhoCommon.cmake module after setting project name
+    include (UrhoCommon)
+
+    # When performing Xcode CI build suppress all the warnings for 3rd party libraries because there are just too many of them
+    if (XCODE AND DEFINED ENV{CI})
+        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+    endif ()
 
     # Add dependency targets
-    add_subdirectory (${BAKED_CMAKE_SOURCE_DIR}/Source/ThirdParty/Lua${JIT} host/Lua${JIT})
+    add_subdirectory (${BAKED_CMAKE_SOURCE_DIR}/Source/ThirdParty/Lua host/Lua)
     add_subdirectory (${BAKED_CMAKE_SOURCE_DIR}/Source/ThirdParty/toluapp/src/lib host/toluapp)
 endif ()
 
@@ -70,17 +74,11 @@ add_custom_command (OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/toluabind.c
 define_source_files (EXTRA_CPP_FILES tolua.c ${CMAKE_CURRENT_BINARY_DIR}/generated/toluabind.c)
 
 # Define dependency libs
-set (LIBS toluapp Lua${JIT})
+set (LIBS toluapp Lua)
 if (NOT MSVC)
     list (APPEND LIBS m)
 endif ()
-set (INCLUDE_DIRS ../../include ../../../../ThirdParty/Lua${JIT}/src)
-
-# All tools must be natively built and output to bin/tool subdir to differentiate them from target platfrom binaries in the bin directory
-set_tool_output_directories ()
+set (INCLUDE_DIRS ../../include ../../../../ThirdParty/Lua/src)
 
 # Setup target
-if (APPLE)
-    setup_macosx_linker_flags (CMAKE_EXE_LINKER_FLAGS)
-endif ()
-setup_executable (NODEPS)
+setup_executable (TOOL NODEPS)

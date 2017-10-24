@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -43,7 +43,8 @@ enum RenderCommandType
     CMD_QUAD,
     CMD_FORWARDLIGHTS,
     CMD_LIGHTVOLUMES,
-    CMD_RENDERUI
+    CMD_RENDERUI,
+    CMD_SENDEVENT
 };
 
 /// Rendering path sorting modes.
@@ -62,12 +63,14 @@ enum RenderTargetSizeMode
 };
 
 /// Rendertarget definition.
-struct RenderTargetInfo
+struct URHO3D_API RenderTargetInfo
 {
     /// Construct.
     RenderTargetInfo() :
         size_(Vector2::ZERO),
         sizeMode_(SIZE_ABSOLUTE),
+        multiSample_(1),
+        autoResolve_(true),
         enabled_(true),
         cubemap_(false),
         filtered_(false),
@@ -89,6 +92,10 @@ struct RenderTargetInfo
     Vector2 size_;
     /// Size mode.
     RenderTargetSizeMode sizeMode_;
+    /// Multisampling level (1 = no multisampling).
+    int multiSample_;
+    /// Multisampling autoresolve flag.
+    bool autoResolve_;
     /// Enabled flag.
     bool enabled_;
     /// Cube map flag.
@@ -102,7 +109,7 @@ struct RenderTargetInfo
 };
 
 /// Rendering path command.
-struct RenderPathCommand
+struct URHO3D_API RenderPathCommand
 {
     /// Construct.
     RenderPathCommand() :
@@ -199,16 +206,18 @@ struct RenderPathCommand
     bool useLitBase_;
     /// Vertex lights flag.
     bool vertexLights_;
+    /// Event name.
+    String eventName_;
 };
 
-/// Rendering path definition.
+/// Rendering path definition. A sequence of commands (e.g. clear screen, draw objects with specific pass) that yields the scene rendering result.
 class URHO3D_API RenderPath : public RefCounted
 {
 public:
     /// Construct.
     RenderPath();
     /// Destruct.
-    ~RenderPath();
+    virtual ~RenderPath() override;
 
     /// Clone the rendering path.
     SharedPtr<RenderPath> Clone();
@@ -250,7 +259,7 @@ public:
     unsigned GetNumCommands() const { return commands_.Size(); }
 
     /// Return command at index, or null if does not exist.
-    RenderPathCommand* GetCommand(unsigned index) { return index < commands_.Size() ? &commands_[index] : (RenderPathCommand*)0; }
+    RenderPathCommand* GetCommand(unsigned index) { return index < commands_.Size() ? &commands_[index] : nullptr; }
 
     /// Return a shader parameter (first appearance in any command.)
     const Variant& GetShaderParameter(const String& name) const;

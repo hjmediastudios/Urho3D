@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -36,7 +36,7 @@ public:
     /// Construct.
     ConstraintRope2D(Context* context);
     /// Destruct.
-    virtual ~ConstraintRope2D();
+    virtual ~ConstraintRope2D() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
@@ -58,7 +58,7 @@ public:
 
 private:
     /// Return joint def.
-    virtual b2JointDef* GetJointDef();
+    virtual b2JointDef* GetJointDef() override;
 
     /// Box2D joint def.
     b2RopeJointDef jointDef_;

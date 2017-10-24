@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -50,12 +50,12 @@ public:
     /// Construct.
     RigidBody2D(Context* context);
     /// Destruct.
-    virtual ~RigidBody2D();
+    virtual ~RigidBody2D() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Handle enabled/disabled state change.
-    virtual void OnSetEnabled();
+    virtual void OnSetEnabled() override;
 
     /// Set body type.
     void SetBodyType(BodyType2D bodyType);
@@ -93,6 +93,8 @@ public:
     void ApplyTorque(float torque, bool wake);
     /// Apply linear impulse.
     void ApplyLinearImpulse(const Vector2& impulse, const Vector2& point, bool wake);
+    /// Apply linear impulse to center.
+    void ApplyLinearImpulseToCenter(const Vector2& impulse, bool wake);
     /// Apply angular impulse.
     void ApplyAngularImpulse(float impulse, bool wake);
 
@@ -101,8 +103,10 @@ public:
     /// Release body.
     void ReleaseBody();
 
-    /// Apply world transform. Called by PhysicsWorld2D.
+    /// Apply world transform from the Box2D body. Called by PhysicsWorld2D.
     void ApplyWorldTransform();
+    /// Apply specified world position & rotation. Called by PhysicsWorld2D.
+    void ApplyWorldTransform(const Vector3& newWorldPosition, const Quaternion& newWorldRotation);
     /// Add collision shape.
     void AddCollisionShape2D(CollisionShape2D* collisionShape);
     /// Remove collision shape.
@@ -113,7 +117,7 @@ public:
     void RemoveConstraint2D(Constraint2D* constraint);
 
     /// Return body type.
-    BodyType2D GetBodyType() const { return (BodyType2D)bodyDef_.type; }
+    BodyType2D GetBodyType() const { return body_ ? (BodyType2D)body_->GetType() : (BodyType2D)bodyDef_.type; }
 
     /// Return mass.
     float GetMass() const;
@@ -126,22 +130,22 @@ public:
     bool GetUseFixtureMass() const { return useFixtureMass_; }
 
     /// Return linear damping.
-    float GetLinearDamping() const { return bodyDef_.linearDamping; }
+    float GetLinearDamping() const { return body_ ? body_->GetLinearDamping() : bodyDef_.linearDamping; }
 
     /// Return angular damping.
-    float GetAngularDamping() const { return bodyDef_.angularDamping; }
+    float GetAngularDamping() const { return body_ ? body_->GetAngularDamping() : bodyDef_.angularDamping; }
 
     /// Return allow sleep.
-    bool IsAllowSleep() const { return bodyDef_.allowSleep; }
+    bool IsAllowSleep() const { return body_ ? body_->IsSleepingAllowed() : bodyDef_.allowSleep; }
 
     /// Return fixed rotation.
-    bool IsFixedRotation() const { return bodyDef_.fixedRotation; }
+    bool IsFixedRotation() const { return body_ ? body_->IsFixedRotation() : bodyDef_.fixedRotation; }
 
     /// Return bullet mode.
-    bool IsBullet() const { return bodyDef_.bullet; }
+    bool IsBullet() const { return body_ ? body_->IsBullet() : bodyDef_.bullet; }
 
     /// Return gravity scale.
-    float GetGravityScale() const { return bodyDef_.gravityScale; }
+    float GetGravityScale() const { return body_ ? body_->GetGravityScale() : bodyDef_.gravityScale; }
 
     /// Return awake.
     bool IsAwake() const;
@@ -155,11 +159,11 @@ public:
 
 private:
     /// Handle node being assigned.
-    virtual void OnNodeSet(Node* node);
+    virtual void OnNodeSet(Node* node) override;
     /// Handle scene being assigned.
-    virtual void OnSceneSet(Scene* scene);
+    virtual void OnSceneSet(Scene* scene) override;
     /// Handle node transform being dirtied.
-    virtual void OnMarkedDirty(Node* node);
+    virtual void OnMarkedDirty(Node* node) override;
 
     /// Physics world.
     WeakPtr<PhysicsWorld2D> physicsWorld_;

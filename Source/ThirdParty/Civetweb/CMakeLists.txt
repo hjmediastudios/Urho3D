@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2008-2015 the Urho3D project.
+# Copyright (c) 2008-2017 the Urho3D project.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,6 +22,27 @@
 
 # Define target name
 set (TARGET_NAME Civetweb)
+
+# Define preprocessor macros
+# Always disable Common Gateway Interface
+add_definitions (-DNO_CGI)
+if (WIN32)
+    include (CheckStructHasMember)
+    check_struct_has_member (struct\ timespec tv_sec time.h HAVE_STRUCT_TIMESPEC_TV_SEC)
+    if (HAVE_STRUCT_TIMESPEC_TV_SEC)
+        include (CheckSymbolExists)
+        check_symbol_exists (_TIMESPEC_DEFINED time.h HAVE__TIMESPEC_DEFINED)
+        if (NOT HAVE__TIMESPEC_DEFINED)
+            add_definitions (-D_TIMESPEC_DEFINED)
+        endif ()
+    endif ()
+elseif (APPLE AND (NOT IOS OR IPHONEOS_DEPLOYMENT_TARGET STREQUAL "" OR NOT IPHONEOS_DEPLOYMENT_TARGET VERSION_LESS 10.0))    # We cheat a little bit here with a hard-coded check because iOS 10.3 SDK when targeting 9.3 has strong symbol for iPhoneOS archs but weak symbol for iPhoneSimulator archs
+    include (CheckLibraryExists)
+    check_library_exists (c clock_gettime "" FOUND_CLOCK_GETTIME_IN_C)
+    if (FOUND_CLOCK_GETTIME_IN_C)
+        add_definitions (-DHAVE_CLOCK_GETTIME)
+    endif ()
+endif ()
 
 # Define source files
 define_source_files (GLOB_CPP_PATTERNS src/*.c GLOB_H_PATTERNS include/*.h)

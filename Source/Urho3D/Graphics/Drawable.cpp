@@ -1,6 +1,6 @@
 //
 
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -49,9 +49,10 @@ const char* GEOMETRY_CATEGORY = "Geometry";
 
 SourceBatch::SourceBatch() :
     distance_(0.0f),
-    geometry_(0),
+    geometry_(nullptr),
     worldTransform_(&Matrix3x4::IDENTITY),
     numWorldTransforms_(1),
+    instancingData_(nullptr),
     geometryType_(GEOM_STATIC)
 {
 }
@@ -72,6 +73,7 @@ SourceBatch& SourceBatch::operator =(const SourceBatch& rhs)
     material_ = rhs.material_;
     worldTransform_ = rhs.worldTransform_;
     numWorldTransforms_ = rhs.numWorldTransforms_;
+    instancingData_ = rhs.instancingData_;
     geometryType_ = rhs.geometryType_;
 
     return *this;
@@ -88,8 +90,8 @@ Drawable::Drawable(Context* context, unsigned char drawableFlags) :
     occludee_(true),
     updateQueued_(false),
     zoneDirty_(false),
-    octant_(0),
-    zone_(0),
+    octant_(nullptr),
+    zone_(nullptr),
     viewMask_(DEFAULT_VIEWMASK),
     lightMask_(DEFAULT_LIGHTMASK),
     shadowMask_(DEFAULT_SHADOWMASK),
@@ -105,7 +107,7 @@ Drawable::Drawable(Context* context, unsigned char drawableFlags) :
     lodBias_(1.0f),
     basePassFlags_(0),
     maxLights_(0),
-    firstLight_(0)
+    firstLight_(nullptr)
 {
 }
 
@@ -149,10 +151,6 @@ void Drawable::ProcessRayQuery(const RayOctreeQuery& query, PODVector<RayQueryRe
     }
 }
 
-void Drawable::Update(const FrameInfo& frame)
-{
-}
-
 void Drawable::UpdateBatches(const FrameInfo& frame)
 {
     const BoundingBox& worldBoundingBox = GetWorldBoundingBox();
@@ -172,17 +170,13 @@ void Drawable::UpdateBatches(const FrameInfo& frame)
         lodDistance_ = newLodDistance;
 }
 
-void Drawable::UpdateGeometry(const FrameInfo& frame)
-{
-}
-
 Geometry* Drawable::GetLodGeometry(unsigned batchIndex, unsigned level)
 {
     // By default return the visible batch geometry
     if (batchIndex < batches_.Size())
         return batches_[batchIndex].geometry_;
     else
-        return 0;
+        return nullptr;
 }
 
 bool Drawable::DrawOcclusion(OcclusionBuffer* buffer)
@@ -331,7 +325,7 @@ void Drawable::MarkInView(const FrameInfo& frame)
         viewCameras_.Push(frame.camera_);
 
     basePassFlags_ = 0;
-    firstLight_ = 0;
+    firstLight_ = nullptr;
     lights_.Clear();
     vertexLights_.Clear();
 }
@@ -448,10 +442,9 @@ void Drawable::RemoveFromOctree()
 bool WriteDrawablesToOBJ(PODVector<Drawable*> drawables, File* outputFile, bool asZUp, bool asRightHanded, bool writeLightmapUV)
 {
     // Must track indices independently to deal with potential mismatching of drawables vertex attributes (ie. one with UV, another without, then another with)
-    // Using long because 65,535 isn't enough as OBJ indices do not reset the count with each new object
-    unsigned long currentPositionIndex = 1;
-    unsigned long currentUVIndex = 1;
-    unsigned long currentNormalIndex = 1;
+    unsigned currentPositionIndex = 1;
+    unsigned currentUVIndex = 1;
+    unsigned currentNormalIndex = 1;
     bool anythingWritten = false;
 
     // Write the common "I came from X" comment
@@ -467,12 +460,15 @@ bool WriteDrawablesToOBJ(PODVector<Drawable*> drawables, File* outputFile, bool 
 
         Node* node = drawable->GetNode();
         Matrix3x4 transMat = drawable->GetNode()->GetWorldTransform();
+        Matrix3x4 n = transMat.Inverse();
+        Matrix3 normalMat = Matrix3(n.m00_, n.m01_, n.m02_, n.m10_, n.m11_, n.m12_, n.m20_, n.m21_, n.m22_);
+        normalMat = normalMat.Transpose();
 
         const Vector<SourceBatch>& batches = drawable->GetBatches();
         for (unsigned geoIndex = 0; geoIndex < batches.Size(); ++geoIndex)
         {
             Geometry* geo = drawable->GetLodGeometry(geoIndex, 0);
-            if (geo == 0)
+            if (geo == nullptr)
                 continue;
             if (geo->GetPrimitiveType() != TRIANGLE_LIST)
             {
@@ -483,28 +479,38 @@ bool WriteDrawablesToOBJ(PODVector<Drawable*> drawables, File* outputFile, bool 
             // If we've reached here than we're going to actually write something to the OBJ file
             anythingWritten = true;
 
-            const unsigned char* vertexData = 0x0;
-            const unsigned char* indexData = 0x0;
-            unsigned int elementSize = 0, indexSize = 0, elementMask = 0;
-            geo->GetRawData(vertexData, elementSize, indexData, indexSize, elementMask);
+            const unsigned char* vertexData;
+            const unsigned char* indexData;
+            unsigned elementSize, indexSize;
+            const PODVector<VertexElement>* elements;
+            geo->GetRawData(vertexData, elementSize, indexData, indexSize, elements);
+            if (!vertexData || !elements)
+                continue;
 
-            const bool hasNormals = (elementMask & MASK_NORMAL) != 0;
-            const bool hasUV = (elementMask & MASK_TEXCOORD1) != 0;
-            const bool hasLMUV = (elementMask & MASK_TEXCOORD2) != 0;
+            bool hasPosition = VertexBuffer::HasElement(*elements, TYPE_VECTOR3, SEM_POSITION);
+            if (!hasPosition)
+            {
+                URHO3D_LOGERRORF("%s (%u) %s (%u) Geometry %u contains does not have Vector3 type positions in vertex data", node->GetName().Length() > 0 ? node->GetName().CString() : "Node", node->GetID(), drawable->GetTypeName().CString(), drawable->GetID(), geoIndex);
+                continue;
+            }
+
+            bool hasNormals = VertexBuffer::HasElement(*elements, TYPE_VECTOR3, SEM_NORMAL);
+            bool hasUV = VertexBuffer::HasElement(*elements, TYPE_VECTOR2, SEM_TEXCOORD, 0);
+            bool hasLMUV = VertexBuffer::HasElement(*elements, TYPE_VECTOR2, SEM_TEXCOORD, 1);
 
             if (elementSize > 0 && indexSize > 0)
             {
-                const unsigned vertexStart = geo->GetVertexStart();
-                const unsigned vertexCount = geo->GetVertexCount();
-                const unsigned indexStart = geo->GetIndexStart();
-                const unsigned indexCount = geo->GetIndexCount();
+                unsigned vertexStart = geo->GetVertexStart();
+                unsigned vertexCount = geo->GetVertexCount();
+                unsigned indexStart = geo->GetIndexStart();
+                unsigned indexCount = geo->GetIndexCount();
 
                 // Name NodeID DrawableType DrawableID GeometryIndex ("Geo" is included for clarity as StaticModel_32_2 could easily be misinterpreted or even quickly misread as 322)
                 // Generated object name example: Node_5_StaticModel_32_Geo_0 ... or ... Bob_5_StaticModel_32_Geo_0
                 outputFile->WriteLine(String("o ").AppendWithFormat("%s_%u_%s_%u_Geo_%u", node->GetName().Length() > 0 ? node->GetName().CString() : "Node", node->GetID(), drawable->GetTypeName().CString(), drawable->GetID(), geoIndex));
 
                 // Write vertex position
-                const unsigned positionOffset = VertexBuffer::GetElementOffset(elementMask, ELEMENT_POSITION);
+                unsigned positionOffset = VertexBuffer::GetElementOffset(*elements, TYPE_VECTOR3, SEM_POSITION);
                 for (unsigned j = 0; j < vertexCount; ++j)
                 {
                     Vector3 vertexPosition = *((const Vector3*)(&vertexData[(vertexStart + j) * elementSize + positionOffset]));
@@ -524,11 +530,11 @@ bool WriteDrawablesToOBJ(PODVector<Drawable*> drawables, File* outputFile, bool 
 
                 if (hasNormals)
                 {
-                    const unsigned normalOffset = VertexBuffer::GetElementOffset(elementMask, ELEMENT_NORMAL);
+                    unsigned normalOffset = VertexBuffer::GetElementOffset(*elements, TYPE_VECTOR3, SEM_NORMAL);
                     for (unsigned j = 0; j < vertexCount; ++j)
                     {
-                        Vector3 vertexNormal = *((const Vector3*)(&vertexData[(vertexStart + j) * elementSize + positionOffset]));
-                        vertexNormal = transMat * vertexNormal;
+                        Vector3 vertexNormal = *((const Vector3*)(&vertexData[(vertexStart + j) * elementSize + normalOffset]));
+                        vertexNormal = normalMat * vertexNormal;
                         vertexNormal.Normalize();
 
                         if (asRightHanded)
@@ -548,7 +554,8 @@ bool WriteDrawablesToOBJ(PODVector<Drawable*> drawables, File* outputFile, bool 
                 if (hasUV || (hasLMUV && writeLightmapUV))
                 {
                     // if writing Lightmap UV is chosen, only use it if TEXCOORD2 exists, otherwise use TEXCOORD1
-                    const unsigned texCoordOffset = (writeLightmapUV && hasLMUV) ? VertexBuffer::GetElementOffset(elementMask, ELEMENT_TEXCOORD2) : VertexBuffer::GetElementOffset(elementMask, ELEMENT_TEXCOORD1);
+                    unsigned texCoordOffset = (writeLightmapUV && hasLMUV) ? VertexBuffer::GetElementOffset(*elements, TYPE_VECTOR2, SEM_TEXCOORD, 1) :
+                        VertexBuffer::GetElementOffset(*elements, TYPE_VECTOR2, SEM_TEXCOORD, 0);
                     for (unsigned j = 0; j < vertexCount; ++j)
                     {
                         Vector2 uvCoords = *((const Vector2*)(&vertexData[(vertexStart + j) * elementSize + texCoordOffset]));
@@ -561,19 +568,19 @@ bool WriteDrawablesToOBJ(PODVector<Drawable*> drawables, File* outputFile, bool 
 
                 // Amount by which to offset indices in the OBJ vs their values in the Urho3D geometry, basically the lowest index value
                 // Compensates for the above vertex writing which doesn't write ALL vertices, just the used ones
-                int indexOffset = M_MAX_INT;
+                unsigned indexOffset = M_MAX_INT;
                 for (unsigned indexIdx = indexStart; indexIdx < indexStart + indexCount; indexIdx++)
                 {
                     if (indexSize == 2)
-                        indexOffset = Min(indexOffset, *((unsigned short*)(indexData + indexIdx * indexSize)));
+                        indexOffset = Min(indexOffset, (unsigned)*((unsigned short*)(indexData + indexIdx * indexSize)));
                     else
                         indexOffset = Min(indexOffset, *((unsigned*)(indexData + indexIdx * indexSize)));
                 }
 
                 for (unsigned indexIdx = indexStart; indexIdx < indexStart + indexCount; indexIdx += 3)
                 {
-                    // Deal with 16 or 32 bit indices, converting to long
-                    unsigned long longIndices[3];
+                    // Deal with 16 or 32 bit indices
+                    unsigned longIndices[3];
                     if (indexSize == 2)
                     {
                         //16 bit indices
@@ -609,7 +616,7 @@ bool WriteDrawablesToOBJ(PODVector<Drawable*> drawables, File* outputFile, bool 
                     }
                     else if (hasNormals || hasUV)
                     {
-                        const unsigned secondTraitIndex = hasNormals ? currentNormalIndex : currentUVIndex;
+                        unsigned secondTraitIndex = hasNormals ? currentNormalIndex : currentUVIndex;
                         output.AppendWithFormat("%l%s%l %l%s%l %l%s%l",
                             currentPositionIndex + longIndices[0],
                             slashCharacter.CString(),

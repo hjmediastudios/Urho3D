@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -154,7 +154,7 @@ Bone* Skeleton::GetRootBone()
 
 Bone* Skeleton::GetBone(unsigned index)
 {
-    return index < bones_.Size() ? &bones_[index] : (Bone*)0;
+    return index < bones_.Size() ? &bones_[index] : nullptr;
 }
 
 Bone* Skeleton::GetBone(const String& name)
@@ -175,7 +175,7 @@ Bone* Skeleton::GetBone(StringHash nameHash)
             return &(*i);
     }
 
-    return 0;
+    return nullptr;
 }
 
 }

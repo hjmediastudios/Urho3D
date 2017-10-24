@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -42,12 +42,12 @@ public:
     /// Construct.
     View3D(Context* context);
     /// Destruct.
-    ~View3D();
+    virtual ~View3D() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// React to resize.
-    virtual void OnResize();
+    virtual void OnResize(const IntVector2& newSize, const IntVector2& delta) override;
 
     /// Define the scene and camera to use in rendering. When ownScene is true the View3D will take ownership of them with shared pointers.
     void SetView(Scene* scene, Camera* camera, bool ownScene = true);
@@ -78,6 +78,8 @@ public:
 private:
     /// Reset scene.
     void ResetScene();
+    /// Handle render surface update event. Queue the texture for update in case the View3D is visible and automatic update is enabled.
+    void HandleRenderSurfaceUpdate(StringHash eventType, VariantMap& eventData);
 
     /// Renderable texture.
     SharedPtr<Texture2D> renderTexture_;

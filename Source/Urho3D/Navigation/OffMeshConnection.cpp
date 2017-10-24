@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -78,7 +78,7 @@ void OffMeshConnection::ApplyAttributes()
     if (endPointDirty_)
     {
         Scene* scene = GetScene();
-        endPoint_ = scene ? scene->GetNode(endPointID_) : (Node*)0;
+        endPoint_ = scene ? scene->GetNode(endPointID_) : nullptr;
         endPointDirty_ = false;
     }
 }

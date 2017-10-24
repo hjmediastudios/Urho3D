@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -94,7 +94,7 @@ public:
     /// Construct.
     OcclusionBuffer(Context* context);
     /// Destruct.
-    virtual ~OcclusionBuffer();
+    virtual ~OcclusionBuffer() override;
 
     /// Set occlusion buffer size and whether to reserve multiple buffers for threading optimization.
     bool SetSize(int width, int height, bool threaded);
@@ -121,7 +121,7 @@ public:
     void ResetUseTimer();
 
     /// Return highest level depth values.
-    int* GetBuffer() const { return buffers_.Size() ? buffers_[0].data_ : (int*)0; }
+    int* GetBuffer() const { return buffers_.Size() ? buffers_[0].data_ : nullptr; }
 
     /// Return view transform matrix.
     const Matrix3x4& GetView() const { return view_; }

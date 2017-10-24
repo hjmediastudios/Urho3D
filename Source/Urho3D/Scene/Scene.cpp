@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -172,7 +172,7 @@ bool Scene::LoadXML(const XMLElement& source, bool setInstanceDefault)
     // Note: the scene filename and checksum can not be set, as we only used an XML element
     if (Node::LoadXML(source, setInstanceDefault))
     {
-        FinishLoading(0);
+        FinishLoading(nullptr);
         return true;
     }
     else
@@ -189,7 +189,7 @@ bool Scene::LoadJSON(const JSONValue& source, bool setInstanceDefault)
     // Note: the scene filename and checksum can not be set, as we only used an XML element
     if (Node::LoadJSON(source, setInstanceDefault))
     {
-        FinishLoading(0);
+        FinishLoading(nullptr);
         return true;
     }
     else
@@ -537,14 +537,14 @@ Node* Scene::Instantiate(Deserializer& source, const Vector3& position, const Qu
     if (node->Load(source, resolver, true, true, mode))
     {
         resolver.Resolve();
-        node->ApplyAttributes();
         node->SetTransform(position, rotation);
+        node->ApplyAttributes();
         return node;
     }
     else
     {
         node->Remove();
-        return 0;
+        return nullptr;
     }
 }
 
@@ -560,14 +560,14 @@ Node* Scene::InstantiateXML(const XMLElement& source, const Vector3& position, c
     if (node->LoadXML(source, resolver, true, true, mode))
     {
         resolver.Resolve();
-        node->ApplyAttributes();
         node->SetTransform(position, rotation);
+        node->ApplyAttributes();
         return node;
     }
     else
     {
         node->Remove();
-        return 0;
+        return nullptr;
     }
 }
 
@@ -583,14 +583,14 @@ Node* Scene::InstantiateJSON(const JSONValue& source, const Vector3& position, c
     if (node->LoadJSON(source, resolver, true, true, mode))
     {
         resolver.Resolve();
-        node->ApplyAttributes();
         node->SetTransform(position, rotation);
+        node->ApplyAttributes();
         return node;
     }
     else
     {
         node->Remove();
-        return 0;
+        return nullptr;
     }
 }
 
@@ -598,7 +598,7 @@ Node* Scene::InstantiateXML(Deserializer& source, const Vector3& position, const
 {
     SharedPtr<XMLFile> xml(new XMLFile(context_));
     if (!xml->Load(source))
-        return 0;
+        return nullptr;
 
     return InstantiateXML(xml->GetRoot(), position, rotation, mode);
 }
@@ -607,7 +607,7 @@ Node* Scene::InstantiateJSON(Deserializer& source, const Vector3& position, cons
 {
     SharedPtr<JSONFile> json(new JSONFile(context_));
     if (!json->Load(source))
-        return 0;
+        return nullptr;
 
     return InstantiateJSON(json->GetRoot(), position, rotation, mode);
 }
@@ -708,13 +708,26 @@ Node* Scene::GetNode(unsigned id) const
     if (id < FIRST_LOCAL_ID)
     {
         HashMap<unsigned, Node*>::ConstIterator i = replicatedNodes_.Find(id);
-        return i != replicatedNodes_.End() ? i->second_ : 0;
+        return i != replicatedNodes_.End() ? i->second_ : nullptr;
     }
     else
     {
         HashMap<unsigned, Node*>::ConstIterator i = localNodes_.Find(id);
-        return i != localNodes_.End() ? i->second_ : 0;
+        return i != localNodes_.End() ? i->second_ : nullptr;
     }
+}
+
+bool Scene::GetNodesWithTag(PODVector<Node*>& dest, const String& tag) const
+{
+    dest.Clear();
+    HashMap<StringHash, PODVector<Node*> >::ConstIterator it = taggedNodes_.Find(tag);
+    if (it != taggedNodes_.End())
+    {
+        dest = it->second_;
+        return true;
+    }
+    else
+        return false;
 }
 
 Component* Scene::GetComponent(unsigned id) const
@@ -722,12 +735,12 @@ Component* Scene::GetComponent(unsigned id) const
     if (id < FIRST_LOCAL_ID)
     {
         HashMap<unsigned, Component*>::ConstIterator i = replicatedComponents_.Find(id);
-        return i != replicatedComponents_.End() ? i->second_ : 0;
+        return i != replicatedComponents_.End() ? i->second_ : nullptr;
     }
     else
     {
         HashMap<unsigned, Component*>::ConstIterator i = localComponents_.Find(id);
-        return i != localComponents_.End() ? i->second_ : 0;
+        return i != localComponents_.End() ? i->second_ : nullptr;
     }
 }
 
@@ -936,6 +949,14 @@ void Scene::NodeAdded(Node* node)
         localNodes_[id] = node;
     }
 
+    // Cache tag if already tagged.
+    if (!node->GetTags().Empty())
+    {
+        const StringVector& tags = node->GetTags();
+        for (unsigned i = 0; i < tags.Size(); ++i)
+            taggedNodes_[tags[i]].Push(node);
+    }
+
     // Add already created components and child nodes now
     const Vector<SharedPtr<Component> >& components = node->GetComponents();
     for (Vector<SharedPtr<Component> >::ConstIterator i = components.Begin(); i != components.End(); ++i)
@@ -943,6 +964,16 @@ void Scene::NodeAdded(Node* node)
     const Vector<SharedPtr<Node> >& children = node->GetChildren();
     for (Vector<SharedPtr<Node> >::ConstIterator i = children.Begin(); i != children.End(); ++i)
         NodeAdded(*i);
+}
+
+void Scene::NodeTagAdded(Node* node, const String& tag)
+{
+    taggedNodes_[tag].Push(node);
+}
+
+void Scene::NodeTagRemoved(Node* node, const String& tag)
+{
+    taggedNodes_[tag].Remove(node);
 }
 
 void Scene::NodeRemoved(Node* node)
@@ -960,6 +991,14 @@ void Scene::NodeRemoved(Node* node)
         localNodes_.Erase(id);
 
     node->ResetScene();
+
+    // Remove node from tag cache
+    if (!node->GetTags().Empty())
+    {
+        const StringVector& tags = node->GetTags();
+        for (unsigned i = 0; i < tags.Size(); ++i)
+            taggedNodes_[tags[i]].Remove(node);
+    }
 
     // Remove components and child nodes as well
     const Vector<SharedPtr<Component> >& components = node->GetComponents();
@@ -1022,7 +1061,7 @@ void Scene::ComponentRemoved(Component* component)
         localComponents_.Erase(id);
 
     component->SetID(0);
-    component->OnSceneSet(0);
+    component->OnSceneSet(nullptr);
 }
 
 void Scene::SetVarNamesAttr(const String& value)
@@ -1041,7 +1080,7 @@ String Scene::GetVarNamesAttr() const
     if (!varNames_.Empty())
     {
         for (HashMap<StringHash, String>::ConstIterator i = varNames_.Begin(); i != varNames_.End(); ++i)
-            ret += i->second_ + ';';
+            ret += i->second_ + ";";
 
         ret.Resize(ret.Length() - 1);
     }

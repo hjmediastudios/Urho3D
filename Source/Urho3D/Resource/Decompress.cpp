@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -828,8 +828,8 @@ void DecompressImagePVRTC(unsigned char* dest, const void* blocks, int width, in
     // Local neighbourhood of blocks
     AMTC_BLOCK_STRUCT* pBlocks[2][2];
 
-    AMTC_BLOCK_STRUCT* pPrevious[2][2] = {{NULL, NULL},
-                                          {NULL, NULL}};
+    AMTC_BLOCK_STRUCT* pPrevious[2][2] = {{nullptr, nullptr},
+                                          {nullptr, nullptr}};
 
     // Low precision colours extracted from the blocks
     struct

@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -42,10 +42,10 @@ public:
     /// Construct.
     FileWatcher(Context* context);
     /// Destruct.
-    virtual ~FileWatcher();
+    virtual ~FileWatcher() override;
 
     /// Directory watching loop.
-    virtual void ThreadFunction();
+    virtual void ThreadFunction() override;
 
     /// Start watching a directory. Return true if successful.
     bool StartWatching(const String& pathName, bool watchSubDirs);
@@ -90,7 +90,7 @@ private:
     /// Linux inotify needs a handle.
     int watchHandle_;
 
-#elif defined(__APPLE__) && !defined(IOS)
+#elif defined(__APPLE__) && !defined(IOS) && !defined(TVOS)
     
     /// Flag indicating whether the running OS supports individual file watching.
     bool supported_;

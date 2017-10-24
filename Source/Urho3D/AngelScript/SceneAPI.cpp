@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -45,6 +45,13 @@ static void RegisterSerializable(asIScriptEngine* engine)
     engine->RegisterGlobalProperty("const uint AM_COMPONENTID", (void*)&AM_COMPONENTID);
     engine->RegisterGlobalProperty("const uint AM_NODEIDVECTOR", (void*)&AM_NODEIDVECTOR);
 
+    engine->RegisterEnum("AutoRemoveMode");
+    engine->RegisterEnumValue("AutoRemoveMode", "REMOVE_DISABLED", REMOVE_DISABLED);
+    engine->RegisterEnumValue("AutoRemoveMode", "REMOVE_COMPONENT", REMOVE_COMPONENT);
+    engine->RegisterEnumValue("AutoRemoveMode", "REMOVE_NODE", REMOVE_NODE);
+
+    engine->RegisterGlobalProperty("const uint AM_FILEREADONLY", (void*)&AM_FILEREADONLY);
+
     RegisterSerializable<Serializable>(engine, "Serializable");
 }
 
@@ -56,6 +63,7 @@ static void ValueAnimationSetEventFrame(float time, const String& eventType, con
 static void RegisterValueAnimation(asIScriptEngine* engine)
 {
     engine->RegisterEnum("InterpMethod");
+    engine->RegisterEnumValue("InterpMethod", "IM_NONE", IM_NONE);
     engine->RegisterEnumValue("InterpMethod", "IM_LINEAR", IM_LINEAR);
     engine->RegisterEnumValue("InterpMethod", "IM_SPLINE", IM_SPLINE);
 
@@ -165,6 +173,13 @@ static bool SceneLoadXMLVectorBuffer(VectorBuffer& buffer, Scene* ptr)
     return ptr->LoadXML(buffer);
 }
 
+static CScriptArray* SceneGetNodesWithTag(const String& tag, Scene* ptr)
+{
+    PODVector<Node*> nodes;
+    ptr->GetNodesWithTag(nodes, tag);
+    return VectorToHandleArray<Node>(nodes, "Array<Node@>");
+}
+
 static bool SceneLoadJSONVectorBuffer(VectorBuffer& buffer, Scene* ptr)
 {
     return ptr->LoadJSON(buffer);
@@ -197,7 +212,7 @@ static bool SceneSaveJSONVectorBuffer(VectorBuffer& buffer, const String& indent
 
 static Node* SceneInstantiate(File* file, const Vector3& position, const Quaternion& rotation, CreateMode mode, Scene* ptr)
 {
-    return file ? ptr->Instantiate(*file, position, rotation, mode) : 0;
+    return file ? ptr->Instantiate(*file, position, rotation, mode) : nullptr;
 }
 
 static Node* SceneInstantiateVectorBuffer(VectorBuffer& buffer, const Vector3& position, const Quaternion& rotation, CreateMode mode, Scene* ptr)
@@ -207,12 +222,12 @@ static Node* SceneInstantiateVectorBuffer(VectorBuffer& buffer, const Vector3& p
 
 static Node* SceneInstantiateXML(File* file, const Vector3& position, const Quaternion& rotation, CreateMode mode, Scene* ptr)
 {
-    return file ? ptr->InstantiateXML(*file, position, rotation, mode) : 0;
+    return file ? ptr->InstantiateXML(*file, position, rotation, mode) : nullptr;
 }
 
 static Node* SceneInstantiateJSON(File* file, const Vector3& position, const Quaternion& rotation, CreateMode mode, Scene* ptr)
 {
-    return file ? ptr->InstantiateJSON(*file, position, rotation, mode) : 0;
+    return file ? ptr->InstantiateJSON(*file, position, rotation, mode) : nullptr;
 }
 
 static Node* SceneInstantiateXMLVectorBuffer(VectorBuffer& buffer, const Vector3& position, const Quaternion& rotation, CreateMode mode, Scene* ptr)
@@ -227,12 +242,12 @@ static Node* SceneInstantiateJSONVectorBuffer(VectorBuffer& buffer, const Vector
 
 static Node* SceneInstantiateXMLFile(XMLFile* xml, const Vector3& position, const Quaternion& rotation, CreateMode mode, Scene* ptr)
 {
-    return xml ? ptr->InstantiateXML(xml->GetRoot(), position, rotation, mode) : 0;
+    return xml ? ptr->InstantiateXML(xml->GetRoot(), position, rotation, mode) : nullptr;
 }
 
 static Node* SceneInstantiateJSONFile(JSONFile* json, const Vector3& position, const Quaternion& rotation, CreateMode mode, Scene* ptr)
 {
-    return json ? ptr->InstantiateJSON(json->GetRoot(), position, rotation, mode) : 0;
+    return json ? ptr->InstantiateJSON(json->GetRoot(), position, rotation, mode) : nullptr;
 }
 
 static CScriptArray* SceneGetRequiredPackageFiles(Scene* ptr)
@@ -269,6 +284,13 @@ static CScriptArray* GetObjectsByCategory(const String& category)
 
     Sort(components.Begin(), components.End());
     return VectorToArray<String>(components, "Array<String>");
+}
+
+static CScriptArray* GetObjectAttributeInfos(const String& objectType)
+{
+    const Vector<AttributeInfo>* attributes = GetScriptContext()->GetAttributes(Urho3D::StringHash(objectType));
+    static Vector<AttributeInfo> emptyAttributes;
+    return VectorToArray<AttributeInfo>(attributes ? *attributes : emptyAttributes, "Array<AttributeInfo>");
 }
 
 static void RegisterSmoothedTransform(asIScriptEngine* engine)
@@ -349,9 +371,13 @@ static void RegisterScene(asIScriptEngine* engine)
     engine->RegisterObjectMethod("Scene", "void Clear(bool clearReplicated = true, bool clearLocal = true)", asMETHOD(Scene, Clear), asCALL_THISCALL);
     engine->RegisterObjectMethod("Scene", "void AddRequiredPackageFile(PackageFile@+)", asMETHOD(Scene, AddRequiredPackageFile), asCALL_THISCALL);
     engine->RegisterObjectMethod("Scene", "void ClearRequiredPackageFiles()", asMETHOD(Scene, ClearRequiredPackageFiles), asCALL_THISCALL);
+
     engine->RegisterObjectMethod("Scene", "void RegisterVar(const String&in)", asMETHOD(Scene, RegisterVar), asCALL_THISCALL);
     engine->RegisterObjectMethod("Scene", "void UnregisterVar(const String&in)", asMETHOD(Scene, UnregisterVar), asCALL_THISCALL);
     engine->RegisterObjectMethod("Scene", "void UnregisterAllVars(const String&in)", asMETHOD(Scene, UnregisterAllVars), asCALL_THISCALL);
+
+    engine->RegisterObjectMethod("Scene", "Array<Node@>@ GetNodesWithTag(const String&in) const", asFUNCTION(SceneGetNodesWithTag), asCALL_CDECL_OBJLAST);
+
     engine->RegisterObjectMethod("Scene", "Component@+ GetComponent(uint) const", asMETHODPR(Scene, GetComponent, (unsigned) const, Component*), asCALL_THISCALL);
     engine->RegisterObjectMethod("Scene", "Node@+ GetNode(uint) const", asMETHOD(Scene, GetNode), asCALL_THISCALL);
     engine->RegisterObjectMethod("Scene", "const String& GetVarName(StringHash) const", asMETHOD(Scene, GetVarName), asCALL_THISCALL);
@@ -379,6 +405,7 @@ static void RegisterScene(asIScriptEngine* engine)
 
     engine->RegisterGlobalFunction("Array<String>@ GetObjectCategories()", asFUNCTION(GetObjectCategories), asCALL_CDECL);
     engine->RegisterGlobalFunction("Array<String>@ GetObjectsByCategory(const String&in)", asFUNCTION(GetObjectsByCategory), asCALL_CDECL);
+    engine->RegisterGlobalFunction("Array<AttributeInfo>@ GetObjectAttributeInfos(const String&in)", asFUNCTION(GetObjectAttributeInfos), asCALL_CDECL);
 }
 
 void RegisterSceneAPI(asIScriptEngine* engine)

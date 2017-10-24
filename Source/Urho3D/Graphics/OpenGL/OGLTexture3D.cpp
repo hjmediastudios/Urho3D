@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -39,141 +39,21 @@
 namespace Urho3D
 {
 
-Texture3D::Texture3D(Context* context) :
-    Texture(context)
-{
-#ifndef GL_ES_VERSION_2_0
-    target_ = GL_TEXTURE_3D;
-#else
-    target_ = 0;
-#endif
-}
-
-Texture3D::~Texture3D()
-{
-    Release();
-}
-
-void Texture3D::RegisterObject(Context* context)
-{
-    context->RegisterFactory<Texture3D>();
-}
-
-bool Texture3D::BeginLoad(Deserializer& source)
-{
-    ResourceCache* cache = GetSubsystem<ResourceCache>();
-
-    // In headless mode, do not actually load the texture, just return success
-    if (!graphics_)
-        return true;
-
-    // If device is lost, retry later
-    if (graphics_->IsDeviceLost())
-    {
-        URHO3D_LOGWARNING("Texture load while device is lost");
-        dataPending_ = true;
-        return true;
-    }
-
-    String texPath, texName, texExt;
-    SplitPath(GetName(), texPath, texName, texExt);
-
-    cache->ResetDependencies(this);
-
-    loadParameters_ = new XMLFile(context_);
-    if (!loadParameters_->Load(source))
-    {
-        loadParameters_.Reset();
-        return false;
-    }
-
-    XMLElement textureElem = loadParameters_->GetRoot();
-    XMLElement volumeElem = textureElem.GetChild("volume");
-    XMLElement colorlutElem = textureElem.GetChild("colorlut");
-
-    if (volumeElem)
-    {
-        String name = volumeElem.GetAttribute("name");
-
-        String volumeTexPath, volumeTexName, volumeTexExt;
-        SplitPath(name, volumeTexPath, volumeTexName, volumeTexExt);
-        // If path is empty, add the XML file path
-        if (volumeTexPath.Empty())
-            name = texPath + name;
-
-        loadImage_ = cache->GetTempResource<Image>(name);
-        // Precalculate mip levels if async loading
-        if (loadImage_ && GetAsyncLoadState() == ASYNC_LOADING)
-            loadImage_->PrecalculateLevels();
-        cache->StoreResourceDependency(this, name);
-        return true;
-    }
-    else if (colorlutElem)
-    {
-        String name = colorlutElem.GetAttribute("name");
-
-        String colorlutTexPath, colorlutTexName, colorlutTexExt;
-        SplitPath(name, colorlutTexPath, colorlutTexName, colorlutTexExt);
-        // If path is empty, add the XML file path
-        if (colorlutTexPath.Empty())
-            name = texPath + name;
-
-        SharedPtr<File> file = GetSubsystem<ResourceCache>()->GetFile(name);
-        loadImage_ = new Image(context_);
-        if (!loadImage_->LoadColorLUT(*(file.Get())))
-        {
-            loadParameters_.Reset();
-            loadImage_.Reset();
-            return false;
-        }
-        // Precalculate mip levels if async loading
-        if (loadImage_ && GetAsyncLoadState() == ASYNC_LOADING)
-            loadImage_->PrecalculateLevels();
-        cache->StoreResourceDependency(this, name);
-        return true;
-    }
-
-    URHO3D_LOGERROR("Texture3D XML data for " + GetName() + " did not contain either volume or colorlut element");
-    return false;
-}
-
-
-bool Texture3D::EndLoad()
-{
-    // In headless mode, do not actually load the texture, just return success
-    if (!graphics_ || graphics_->IsDeviceLost())
-        return true;
-
-    // If over the texture budget, see if materials can be freed to allow textures to be freed
-    CheckTextureBudget(GetTypeStatic());
-
-    SetParameters(loadParameters_);
-    bool success = SetData(loadImage_);
-
-    loadImage_.Reset();
-    loadParameters_.Reset();
-
-    return success;
-}
-
 void Texture3D::OnDeviceLost()
 {
     GPUObject::OnDeviceLost();
-
-    if (renderSurface_)
-        renderSurface_->OnDeviceLost();
 }
 
 void Texture3D::OnDeviceReset()
 {
-    if (!object_ || dataPending_)
+    if (!object_.name_ || dataPending_)
     {
         // If has a resource file, reload through the resource cache. Otherwise just recreate.
         ResourceCache* cache = GetSubsystem<ResourceCache>();
         if (cache->Exists(GetName()))
             dataLost_ = !cache->ReloadResource(this);
 
-        if (!object_)
+        if (!object_.name_)
         {
             Create();
             dataLost_ = true;
@@ -185,7 +65,7 @@ void Texture3D::OnDeviceReset()
 
 void Texture3D::Release()
 {
-    if (object_)
+    if (object_.name_)
     {
         if (!graphics_ || graphics_->IsDeviceLost())
             return;
@@ -193,58 +73,19 @@ void Texture3D::Release()
         for (unsigned i = 0; i < MAX_TEXTURE_UNITS; ++i)
         {
             if (graphics_->GetTexture(i) == this)
-                graphics_->SetTexture(i, 0);
+                graphics_->SetTexture(i, nullptr);
         }
 
-        if (renderSurface_)
-            renderSurface_->Release();
-
-        glDeleteTextures(1, &object_);
-        object_ = 0;
+        glDeleteTextures(1, &object_.name_);
+        object_.name_ = 0;
     }
-    else
-    {
-        if (renderSurface_)
-            renderSurface_->Release();
-    }
-}
-
-bool Texture3D::SetSize(int width, int height, int depth, unsigned format, TextureUsage usage)
-{
-    // Delete the old rendersurface if any
-    renderSurface_.Reset();
-
-    usage_ = usage;
-
-    if (usage >= TEXTURE_RENDERTARGET)
-    {
-        renderSurface_ = new RenderSurface(this);
-
-        // Clamp mode addressing by default, nearest filtering, and mipmaps disabled
-        addressMode_[COORD_U] = ADDRESS_CLAMP;
-        addressMode_[COORD_V] = ADDRESS_CLAMP;
-        filterMode_ = FILTER_NEAREST;
-        requestedLevels_ = 1;
-    }
-
-    if (usage == TEXTURE_RENDERTARGET)
-        SubscribeToEvent(E_RENDERSURFACEUPDATE, URHO3D_HANDLER(Texture3D, HandleRenderSurfaceUpdate));
-    else
-        UnsubscribeFromEvent(E_RENDERSURFACEUPDATE);
-
-    width_ = width;
-    height_ = height;
-    depth_ = depth;
-    format_ = format;
-
-    return Create();
 }
 
 bool Texture3D::SetData(unsigned level, int x, int y, int z, int width, int height, int depth, const void* data)
 {
     URHO3D_PROFILE(SetTextureData);
 
-    if (!object_ || !graphics_)
+    if (!object_.name_ || !graphics_)
     {
         URHO3D_LOGERROR("No texture created, can not set data");
         return false;
@@ -308,11 +149,11 @@ bool Texture3D::SetData(unsigned level, int x, int y, int z, int width, int heig
     }
 #endif
 
-    graphics_->SetTexture(0, 0);
+    graphics_->SetTexture(0, nullptr);
     return true;
 }
 
-bool Texture3D::SetData(SharedPtr<Image> image, bool useAlpha)
+bool Texture3D::SetData(Image* image, bool useAlpha)
 {
     if (!image)
     {
@@ -320,8 +161,9 @@ bool Texture3D::SetData(SharedPtr<Image> image, bool useAlpha)
         return false;
     }
 
+    // Use a shared ptr for managing the temporary mip images created during this function
+    SharedPtr<Image> mipImage;
     unsigned memoryUse = sizeof(Texture3D);
-
     int quality = QUALITY_HIGH;
     Renderer* renderer = GetSubsystem<Renderer>();
     if (renderer)
@@ -333,7 +175,7 @@ bool Texture3D::SetData(SharedPtr<Image> image, bool useAlpha)
         unsigned components = image->GetComponents();
         if (Graphics::GetGL3Support() && ((components == 1 && !useAlpha) || components == 2))
         {
-            image = image->ConvertToRGBA();
+            mipImage = image->ConvertToRGBA(); image = mipImage;
             if (!image)
                 return false;
             components = image->GetComponents();
@@ -348,7 +190,7 @@ bool Texture3D::SetData(SharedPtr<Image> image, bool useAlpha)
         // Discard unnecessary mip levels
         for (unsigned i = 0; i < mipsToSkip_[quality]; ++i)
         {
-            image = image->GetNextLevel();
+            mipImage = image->GetNextLevel(); image = mipImage;
             levelData = image->GetData();
             levelWidth = image->GetWidth();
             levelHeight = image->GetHeight();
@@ -382,7 +224,7 @@ bool Texture3D::SetData(SharedPtr<Image> image, bool useAlpha)
         if (IsCompressed() && requestedLevels_ > 1)
             requestedLevels_ = 0;
         SetSize(levelWidth, levelHeight, levelDepth, format);
-        if (!object_)
+        if (!object_.name_)
             return false;
 
         for (unsigned i = 0; i < levels_; ++i)
@@ -392,7 +234,7 @@ bool Texture3D::SetData(SharedPtr<Image> image, bool useAlpha)
 
             if (i < levels_ - 1)
             {
-                image = image->GetNextLevel();
+                mipImage = image->GetNextLevel(); image = mipImage;
                 levelData = image->GetData();
                 levelWidth = image->GetWidth();
                 levelHeight = image->GetHeight();
@@ -424,7 +266,7 @@ bool Texture3D::SetData(SharedPtr<Image> image, bool useAlpha)
         height /= (1 << mipsToSkip);
         depth /= (1 << mipsToSkip);
 
-        SetNumLevels((unsigned)Max((int)(levels - mipsToSkip), 1));
+        SetNumLevels(Max((levels - mipsToSkip), 1U));
         SetSize(width, height, depth, format);
 
         for (unsigned i = 0; i < levels_ && i < levels - mipsToSkip; ++i)
@@ -453,7 +295,7 @@ bool Texture3D::SetData(SharedPtr<Image> image, bool useAlpha)
 bool Texture3D::GetData(unsigned level, void* dest) const
 {
 #ifndef GL_ES_VERSION_2_0
-    if (!object_ || !graphics_)
+    if (!object_.name_ || !graphics_)
     {
         URHO3D_LOGERROR("No texture created, can not get data");
         return false;
@@ -484,7 +326,7 @@ bool Texture3D::GetData(unsigned level, void* dest) const
     else
         glGetCompressedTexImage(target_, level, dest);
 
-    graphics_->SetTexture(0, 0);
+    graphics_->SetTexture(0, nullptr);
     return true;
 #else
     URHO3D_LOGERROR("Getting texture data not supported");
@@ -513,7 +355,7 @@ bool Texture3D::Create()
     unsigned externalFormat = GetExternalFormat(format_);
     unsigned dataType = GetDataType(format_);
 
-    glGenTextures(1, &object_);
+    glGenTextures(1, &object_.name_);
 
     // Ensure that our texture is bound to OpenGL texture unit 0
     graphics_->SetTextureForUpdate(this);
@@ -524,7 +366,7 @@ bool Texture3D::Create()
     if (!IsCompressed())
     {
         glGetError();
-        glTexImage3D(target_, 0, format, width_, height_, depth_, 0, externalFormat, dataType, 0);
+        glTexImage3D(target_, 0, format, width_, height_, depth_, 0, externalFormat, dataType, nullptr);
         if (glGetError())
         {
             URHO3D_LOGERROR("Failed to create texture");
@@ -533,32 +375,16 @@ bool Texture3D::Create()
     }
 
     // Set mipmapping
-    levels_ = requestedLevels_;
-    if (!levels_)
-    {
-        unsigned maxSize = (unsigned)Max(Max((int)width_, (int)height_), (int)depth_);
-        while (maxSize)
-        {
-            maxSize >>= 1;
-            ++levels_;
-        }
-    }
-
+    levels_ = CheckMaxLevels(width_, height_, depth_, requestedLevels_);
     glTexParameteri(target_, GL_TEXTURE_BASE_LEVEL, 0);
     glTexParameteri(target_, GL_TEXTURE_MAX_LEVEL, levels_ - 1);
 
     // Set initial parameters, then unbind the texture
     UpdateParameters();
-    graphics_->SetTexture(0, 0);
+    graphics_->SetTexture(0, nullptr);
 
     return success;
 #endif
-}
-
-void Texture3D::HandleRenderSurfaceUpdate(StringHash eventType, VariantMap& eventData)
-{
-    if (renderSurface_ && renderSurface_->GetUpdateMode() == SURFACE_UPDATEALWAYS)
-        renderSurface_->QueueUpdate();
 }
 
 }

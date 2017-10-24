@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -942,7 +942,7 @@ void String::EncodeUTF8(char*& dest, unsigned unicodeChar)
 
 unsigned String::DecodeUTF8(const char*& src)
 {
-    if (src == 0)
+    if (src == nullptr)
         return 0;
 
     unsigned char char1 = *src++;
@@ -1011,13 +1011,12 @@ void String::EncodeUTF16(wchar_t*& dest, unsigned unicodeChar)
 
 unsigned String::DecodeUTF16(const wchar_t*& src)
 {
-    if (src == 0)
+    if (src == nullptr)
         return 0;
     
-    unsigned short word1 = *src;
+    unsigned short word1 = *src++;
     
     // Check if we are at a low surrogate
-    word1 = *src++;
     if (word1 >= 0xdc00 && word1 < 0xe000)
     {
         while (*src >= 0xdc00 && *src < 0xe000)
@@ -1025,7 +1024,7 @@ unsigned String::DecodeUTF16(const wchar_t*& src)
         return '?';
     }
     
-    if (word1 < 0xd800 || word1 >= 0xe00)
+    if (word1 < 0xd800 || word1 >= 0xe000)
         return word1;
     else
     {
@@ -1036,7 +1035,7 @@ unsigned String::DecodeUTF16(const wchar_t*& src)
             return '?';
         }
         else
-            return ((word1 & 0x3ff) << 10) | (word2 & 0x3ff) | 0x10000;
+            return (((word1 & 0x3ff) << 10) | (word2 & 0x3ff)) + 0x10000;
     }
 }
 #endif
@@ -1237,13 +1236,13 @@ void String::Replace(unsigned pos, unsigned length, const char* srcStart, unsign
 
 WString::WString() :
     length_(0),
-    buffer_(0)
+    buffer_(nullptr)
 {
 }
 
 WString::WString(const String& str) :
     length_(0),
-    buffer_(0)
+    buffer_(nullptr)
 {
 #ifdef _WIN32
     unsigned neededSize = 0;
@@ -1283,7 +1282,7 @@ void WString::Resize(unsigned newLength)
     if (!newLength)
     {
         delete[] buffer_;
-        buffer_ = 0;
+        buffer_ = nullptr;
         length_ = 0;
     }
     else

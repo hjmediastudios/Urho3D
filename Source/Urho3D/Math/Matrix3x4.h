@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -125,7 +125,7 @@ public:
 #endif
     }
 
-    // Construct from values.
+    /// Construct from values.
     Matrix3x4(float v00, float v01, float v02, float v03,
               float v10, float v11, float v12, float v13,
               float v20, float v21, float v22, float v23) :
@@ -665,6 +665,16 @@ public:
         );
     }
 
+    /// Return the scaling part with the sign. Reference rotation matrix is required to avoid ambiguity.
+    Vector3 SignedScale(const Matrix3& rotation) const
+    {
+        return Vector3(
+            rotation.m00_ * m00_ + rotation.m10_ * m10_ + rotation.m20_ * m20_,
+            rotation.m01_ * m01_ + rotation.m11_ * m11_ + rotation.m21_ * m21_,
+            rotation.m02_ * m02_ + rotation.m12_ * m12_ + rotation.m22_ * m22_
+        );
+    }
+
     /// Test for equality with another matrix with epsilon.
     bool Equals(const Matrix3x4& rhs) const
     {
@@ -682,11 +692,21 @@ public:
 
     /// Return decomposition to translation, rotation and scale.
     void Decompose(Vector3& translation, Quaternion& rotation, Vector3& scale) const;
+
     /// Return inverse.
     Matrix3x4 Inverse() const;
 
     /// Return float data.
     const float* Data() const { return &m00_; }
+
+    /// Return matrix element.
+    float Element(unsigned i, unsigned j) const { return Data()[i * 4 + j]; }
+
+    /// Return matrix row.
+    Vector4 Row(unsigned i) const { return Vector4(Element(i, 0), Element(i, 1), Element(i, 2), Element(i, 3)); }
+
+    /// Return matrix column.
+    Vector3 Column(unsigned j) const { return Vector3(Element(0, j), Element(1, j), Element(2, j)); }
 
     /// Return as string.
     String ToString() const;
@@ -711,8 +731,7 @@ public:
 
 #ifdef URHO3D_SSE
 private:
-    // Sets this matrix from the given translation, rotation (as quaternion (w,x,y,z)), and nonuniform scale (x,y,z) parameters.
-    // Note: the w component of the scale parameter passed to this function must be 1.
+    /// \brief Sets this matrix from the given translation, rotation (as quaternion (w,x,y,z)), and nonuniform scale (x,y,z) parameters. Note: the w component of the scale parameter passed to this function must be 1.
     void inline SetFromTRS(__m128 t, __m128 q, __m128 s)
     {
         q = _mm_shuffle_ps(q, q, _MM_SHUFFLE(0, 3, 2, 1));

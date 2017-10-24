@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -36,16 +36,16 @@ public:
     /// Construct.
     OffMeshConnection(Context* context);
     /// Destruct.
-    virtual ~OffMeshConnection();
+    virtual ~OffMeshConnection() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Handle attribute write access.
-    virtual void OnSetAttribute(const AttributeInfo& attr, const Variant& src);
+    virtual void OnSetAttribute(const AttributeInfo& attr, const Variant& src) override;
     /// Apply attribute changes that can not be applied immediately. Called after scene load or a network update.
-    virtual void ApplyAttributes();
+    virtual void ApplyAttributes() override;
     /// Visualize the component as debug geometry.
-    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest);
+    virtual void DrawDebugGeometry(DebugRenderer* debug, bool depthTest) override;
 
     /// Set endpoint node.
     void SetEndPoint(Node* node);

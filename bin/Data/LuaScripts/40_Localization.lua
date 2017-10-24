@@ -10,8 +10,9 @@ function Start()
     -- Execute the common startup for samples
     SampleStart()
 
-    -- Enable OS cursor
+    -- Enable and center OS cursor
     input.mouseVisible = true
+    input:CenterMousePosition()
 
     -- Load strings from JSON files and subscribe to the change language event
     InitLocalizationSystem()
@@ -21,11 +22,14 @@ function Start()
 
     -- Init the user interface
     CreateGUI()
+
+    -- Set the mouse mode to use in the sample
+    SampleInitMouseMode(MM_FREE)
 end
 
 function InitLocalizationSystem()
     -- JSON files must be in UTF8 encoding without BOM
-    -- The first founded language will be set as current
+    -- The first found language will be set as current
     localization:LoadJSONFile("StringsEnRu.json")
     -- You can load multiple files
     localization:LoadJSONFile("StringsDe.json")
@@ -173,4 +177,3 @@ function HandleChangeLanguage(eventType, eventData)
 
     -- A text on the button "Press this button" changes automatically
 end
-

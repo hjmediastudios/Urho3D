@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -39,7 +39,7 @@ class TmxLayer2D : public RefCounted
 {
 public:
     TmxLayer2D(TmxFile2D* tmxFile, TileMapLayerType2D type);
-    virtual ~TmxLayer2D();
+    virtual ~TmxLayer2D() override;
 
     /// Return tmx file.
     TmxFile2D* GetTmxFile() const;
@@ -99,11 +99,11 @@ public:
     Tile2D* GetTile(int x, int y) const;
 
 protected:
-    /// Tile.
+    /// Tiles.
     Vector<SharedPtr<Tile2D> > tiles_;
 };
 
-/// Tmx image layer.
+/// Tmx objects layer.
 class TmxObjectGroup2D : public TmxLayer2D
 {
 public:
@@ -111,6 +111,9 @@ public:
 
     /// Load from XML element.
     bool Load(const XMLElement& element, const TileMapInfo2D& info);
+
+    /// Store object.
+    void StoreObject(XMLElement objectElem, SharedPtr<TileMapObject2D> object, const TileMapInfo2D& info, bool isTile = false);
 
     /// Return number of objects.
     unsigned GetNumObjects() const { return objects_.Size(); }
@@ -159,20 +162,33 @@ public:
     /// Construct.
     TmxFile2D(Context* context);
     /// Destruct.
-    virtual ~TmxFile2D();
+    virtual ~TmxFile2D() override;
     /// Register object factory.
     static void RegisterObject(Context* context);
 
     /// Load resource from stream. May be called from a worker thread. Return true if successful.
-    virtual bool BeginLoad(Deserializer& source);
+    virtual bool BeginLoad(Deserializer& source) override;
     /// Finish resource loading. Always called from the main thread. Return true if successful.
-    virtual bool EndLoad();
+    virtual bool EndLoad() override;
 
-    /// Return information.
+    /// Set Tilemap information.
+    bool SetInfo(Orientation2D orientation, int width, int height, float tileWidth, float tileHeight);
+
+    /// Add layer at index, if index > number of layers then append to end.
+    void AddLayer(unsigned index, TmxLayer2D *layer);
+
+    /// Append layer to end.
+    void AddLayer(Urho3D::TmxLayer2D* layer);
+
+    /// Return Tilemap information.
     const TileMapInfo2D& GetInfo() const { return info_; }
 
     /// Return tile sprite by gid, if not exist return 0.
     Sprite2D* GetTileSprite(int gid) const;
+
+    /// Return tile collision shapes for a given gid.
+    Vector<SharedPtr<TileMapObject2D> > GetTileCollisionShapes(int gid) const;
+
     /// Return tile property set by gid, if not exist return 0.
     PropertySet2D* GetTilePropertySet(int gid) const;
 
@@ -194,15 +210,14 @@ private:
     HashMap<String, SharedPtr<XMLFile> > tsxXMLFiles_;
     /// Tile map information.
     TileMapInfo2D info_;
-    /// Tile set textures.
-    Vector<SharedPtr<Texture2D> > tileSetTextures_;
     /// Gid to tile sprite mapping.
     HashMap<int, SharedPtr<Sprite2D> > gidToSpriteMapping_;
     /// Gid to tile property set mapping.
     HashMap<int, SharedPtr<PropertySet2D> > gidToPropertySetMapping_;
+    /// Gid to tile collision shape mapping.
+    HashMap<int, Vector<SharedPtr<TileMapObject2D> > > gidToCollisionShapeMapping_;
     /// Layers.
     Vector<TmxLayer2D*> layers_;
 };
 
 }
-

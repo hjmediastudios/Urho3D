@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -95,6 +95,20 @@ const IntVector2& Sprite::GetScreenPosition() const
     return screenPosition_;
 }
 
+IntVector2 Sprite::ScreenToElement(const IntVector2& screenPosition)
+{
+    Vector3 floatPos((float)screenPosition.x_, (float)screenPosition.y_, 0.0f);
+    Vector3 transformedPos = GetTransform().Inverse() * floatPos;
+    return IntVector2((int)transformedPos.x_, (int)transformedPos.y_);
+}
+
+IntVector2 Sprite::ElementToScreen(const IntVector2& position)
+{
+    Vector3 floatPos((float)position.x_, (float)position.y_, 0.0f);
+    Vector3 transformedPos = GetTransform() * floatPos;
+    return IntVector2((int)transformedPos.x_, (int)transformedPos.y_);
+}
+
 void Sprite::GetBatches(PODVector<UIBatch>& batches, PODVector<float>& vertexData, const IntRect& currentScissor)
 {
     bool allOpaque = true;
@@ -115,10 +129,10 @@ void Sprite::GetBatches(PODVector<UIBatch>& batches, PODVector<float>& vertexDat
     hovering_ = false;
 }
 
-void Sprite::OnPositionSet()
+void Sprite::OnPositionSet(const IntVector2& newPosition)
 {
     // If the integer position was set (layout update?), copy to the float position
-    floatPosition_ = Vector2((float)position_.x_, (float)position_.y_);
+    floatPosition_ = Vector2((float)newPosition.x_, (float)newPosition.y_);
 }
 
 void Sprite::SetPosition(const Vector2& position)

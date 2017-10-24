@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,7 @@
 #else
 #include <Urho3D/Urho3D.h>
 #endif
+#include <initializer_list>
 
 namespace Urho3D
 {
@@ -36,7 +37,7 @@ struct URHO3D_API LinkedListNode
 {
     /// Construct.
     LinkedListNode() :
-        next_(0)
+        next_(nullptr)
     {
     }
 
@@ -53,7 +54,14 @@ public:
         head_(0)
     {
     }
-
+    /// Aggregate initialization constructor.
+    LinkedList(const std::initializer_list<T>& list) : LinkedList()
+    {
+        for (auto it = list.begin(); it != list.end(); it++)
+        {
+            Insert(*it);
+        }
+    }
     /// Destruct.
     ~LinkedList()
     {

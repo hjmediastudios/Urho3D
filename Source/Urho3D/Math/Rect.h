@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -170,6 +170,17 @@ public:
             return INSIDE;
     }
 
+    /// Test if another rect is inside, outside or intersects.
+    Intersection IsInside(const Rect& rect) const
+    {
+        if (rect.max_.x_ < min_.x_ || rect.min_.x_ > max_.x_ || rect.max_.y_ < min_.y_ || rect.min_.y_ > max_.y_)
+            return OUTSIDE;
+        else if (rect.min_.x_ < min_.x_ || rect.max_.x_ > max_.x_ || rect.min_.y_ < min_.y_ || rect.max_.y_ > max_.y_)
+            return INTERSECTS;
+        else
+            return INSIDE;
+    }
+
     /// Return float data.
     const void* Data() const { return &min_.x_; }
 
@@ -202,6 +213,15 @@ public:
         top_(0),
         right_(0),
         bottom_(0)
+    {
+    }
+
+    /// Construct from minimum and maximum vectors.
+    IntRect(const IntVector2& min, const IntVector2& max) :
+        left_(min.x_),
+        top_(min.y_),
+        right_(max.x_),
+        bottom_(max.y_)
     {
     }
 
@@ -252,6 +272,14 @@ public:
         else
             return INSIDE;
     }
+
+    /// Clip with another rect.  Since IntRect does not have an undefined state
+    /// like Rect, return (0, 0, 0, 0) if the result is empty.
+    void Clip(const IntRect& rect);
+
+    /// Merge a rect.  If this rect was empty, become the other rect.  If the
+    /// other rect is empty, do nothing.
+    void Merge(const IntRect& rect);
 
     /// Return integer data.
     const int* Data() const { return &left_; }

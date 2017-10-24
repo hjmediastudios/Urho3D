@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -51,16 +51,23 @@ public:
     /// Restore UI element's default color.
     void SetDefaultColor();
     /// Add a quad.
-    void AddQuad(int x, int y, int width, int height, int texOffsetX, int texOffsetY, int texWidth = 0, int texHeight = 0);
+    void AddQuad(float x, float y, float width, float height, int texOffsetX, int texOffsetY, int texWidth = 0, int texHeight = 0);
     /// Add a quad using a transform matrix.
     void AddQuad(const Matrix3x4& transform, int x, int y, int width, int height, int texOffsetX, int texOffsetY, int texWidth = 0,
         int texHeight = 0);
     /// Add a quad with tiled texture.
     void AddQuad(int x, int y, int width, int height, int texOffsetX, int texOffsetY, int texWidth, int texHeight, bool tiled);
+    /// Add a quad with freeform points and UVs. Uses the current color, not gradient. Points should be specified in clockwise order.
+    void AddQuad(const Matrix3x4& transform, const IntVector2& a, const IntVector2& b, const IntVector2& c, const IntVector2& d,
+        const IntVector2& texA, const IntVector2& texB, const IntVector2& texC, const IntVector2& texD);
+    /// Add a quad with freeform points, UVs and colors. Points should be specified in clockwise order.
+    void AddQuad(const Matrix3x4& transform, const IntVector2& a, const IntVector2& b, const IntVector2& c, const IntVector2& d,
+        const IntVector2& texA, const IntVector2& texB, const IntVector2& texC, const IntVector2& texD, const Color& colA,
+        const Color& colB, const Color& colC, const Color& colD);
     /// Merge with another batch.
     bool Merge(const UIBatch& batch);
     /// Return an interpolated color for the UI element.
-    unsigned GetInterpolatedColor(int x, int y);
+    unsigned GetInterpolatedColor(float x, float y);
 
     /// Add or merge a batch.
     static void AddOrMerge(const UIBatch& batch, PODVector<UIBatch>& batches);

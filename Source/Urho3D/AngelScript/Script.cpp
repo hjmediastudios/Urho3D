@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2008-2015 the Urho3D project.
+// Copyright (c) 2008-2017 the Urho3D project.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -50,7 +50,7 @@ class ScriptResourceRouter : public ResourceRouter
     }
 
     /// Check if request is for an AngelScript file and reroute to compiled version if necessary (.as file not available)
-    virtual void Route(String& name, ResourceRequest requestType)
+    virtual void Route(String& name, ResourceRequest requestType) override
     {
         String extension = GetExtension(name);
         if (extension == ".as")
@@ -65,12 +65,11 @@ class ScriptResourceRouter : public ResourceRouter
     }
 };
 
-VariantMap Script::globalVars;
 
 Script::Script(Context* context) :
     Object(context),
-    scriptEngine_(0),
-    immediateContext_(0),
+    scriptEngine_(nullptr),
+    immediateContext_(nullptr),
     scriptNestingLevel_(0),
     executeConsoleCommands_(false)
 {
@@ -86,11 +85,21 @@ Script::Script(Context* context) :
     scriptEngine_->SetEngineProperty(asEP_ALLOW_UNSAFE_REFERENCES, (asPWORD)true);
     scriptEngine_->SetEngineProperty(asEP_ALLOW_IMPLICIT_HANDLE_TYPES, (asPWORD)true);
     scriptEngine_->SetEngineProperty(asEP_BUILD_WITHOUT_LINE_CUES, (asPWORD)true);
+// Use the copy of the original asMETHOD macro in a web build (for some reason it still works, presumably because the signature of the function is known)
+#ifdef AS_MAX_PORTABILITY
+    scriptEngine_->SetMessageCallback(_asMETHOD(Script, MessageCallback), this, asCALL_THISCALL);
+#else
     scriptEngine_->SetMessageCallback(asMETHOD(Script, MessageCallback), this, asCALL_THISCALL);
+#endif
 
     // Create the context for immediate execution
     immediateContext_ = scriptEngine_->CreateContext();
+// Use the copy of the original asMETHOD macro in a web build (for some reason it still works, presumably because the signature of the function is known)
+#ifdef AS_MAX_PORTABILITY
+    immediateContext_->SetExceptionCallback(_asMETHOD(Script, ExceptionCallback), this, asCALL_THISCALL);
+#else
     immediateContext_->SetExceptionCallback(asMETHOD(Script, ExceptionCallback), this, asCALL_THISCALL);
+#endif
 
     // Register Script library object factories
     RegisterScriptLibrary(context_);
@@ -116,6 +125,9 @@ Script::Script(Context* context) :
 #endif
 #ifdef URHO3D_DATABASE
     RegisterDatabaseAPI(scriptEngine_);
+#endif
+#ifdef URHO3D_IK
+    RegisterIKAPI(scriptEngine_);
 #endif
 #ifdef URHO3D_PHYSICS
     RegisterPhysicsAPI(scriptEngine_);
@@ -146,7 +158,7 @@ Script::~Script()
     if (immediateContext_)
     {
         immediateContext_->Release();
-        immediateContext_ = 0;
+        immediateContext_ = nullptr;
     }
 
     for (unsigned i = 0; i < scriptFileContexts_.Size(); ++i)
@@ -155,7 +167,7 @@ Script::~Script()
     if (scriptEngine_)
     {
         scriptEngine_->Release();
-        scriptEngine_ = 0;
+        scriptEngine_ = nullptr;
     }
 
     ResourceCache* cache = GetSubsystem<ResourceCache>();
@@ -173,7 +185,7 @@ bool Script::Execute(const String& line)
     String wrappedLine = "void f(){\n" + line + ";\n}";
 
     // If no immediate mode script file set, create a dummy module for compiling the line
-    asIScriptModule* module = 0;
+    asIScriptModule* module = nullptr;
     if (defaultScriptFile_)
         module = defaultScriptFile_->GetScriptModule();
     if (!module)
@@ -181,7 +193,7 @@ bool Script::Execute(const String& line)
     if (!module)
         return false;
 
-    asIScriptFunction* function = 0;
+    asIScriptFunction* function = nullptr;
     if (module->CompileFunction("", wrappedLine.CString(), -1, 0, &function) < 0)
         return false;
 
@@ -288,13 +300,13 @@ void Script::ClearObjectTypeCache()
     objectTypes_.Clear();
 }
 
-asIObjectType* Script::GetObjectType(const char* declaration)
+asITypeInfo* Script::GetObjectType(const char* declaration)
 {
-    HashMap<const char*, asIObjectType*>::ConstIterator i = objectTypes_.Find(declaration);
+    HashMap<const char*, asITypeInfo*>::ConstIterator i = objectTypes_.Find(declaration);
     if (i != objectTypes_.End())
         return i->second_;
 
-    asIObjectType* type = scriptEngine_->GetObjectTypeById(scriptEngine_->GetTypeIdByDecl(declaration));
+    asITypeInfo* type = scriptEngine_->GetTypeInfoById(scriptEngine_->GetTypeIdByDecl(declaration));
     objectTypes_[declaration] = type;
     return type;
 }
@@ -304,7 +316,13 @@ asIScriptContext* Script::GetScriptFileContext()
     while (scriptNestingLevel_ >= scriptFileContexts_.Size())
     {
         asIScriptContext* newContext = scriptEngine_->CreateContext();
+// Use the copy of the original asMETHOD macro in a web build (for some reason it still works, presumably because the signature of the function is known)
+#ifdef AS_MAX_PORTABILITY
+        newContext->SetExceptionCallback(_asMETHOD(Script, ExceptionCallback), this, asCALL_THISCALL);
+#else
         newContext->SetExceptionCallback(asMETHOD(Script, ExceptionCallback), this, asCALL_THISCALL);
+#endif
+
         scriptFileContexts_.Push(newContext);
     }
 
